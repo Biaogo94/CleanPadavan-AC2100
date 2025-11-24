@@ -7,36 +7,34 @@ on:
         description: '固件版本标识'
         required: false
         default: 'clean'
-  push:
-    branches:
-      - main
-    paths:
-      - 'config/RM2100.config'
-      - '.github/workflows/build-rm2100.yml'
 
 env:
-  REPOSITORY_URL: https://github.com/hanwckf/padavan-4.4
-  TOOLCHAIN_URL: https://github.com/hanwckf/padavan-toolchain/releases/download/v1.1/mipsel-linux-uclibc.tar.xz
+  REPOSITORY_URL: https://github.com/hanwckf/rt-n56u
   DEVICE_NAME: RM2100
-  FIRMWARE_AUTHOR: CleanBuild
   TZ: Asia/Shanghai
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     
     steps:
     - name: 检出仓库
       uses: actions/checkout@v4
 
+    - name: 释放磁盘空间
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo apt-get clean
+
     - name: 初始化编译环境
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends \
-          libtool-bin gperf python3-docutils autopoint gettext txt2man \
-          unzip libtool libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev \
-          libltdl-dev gcc-multilib g++-multilib cmake gawk fakeroot curl git \
-          xxd cpio pkg-config zlib1g-dev libgmp-dev libmpc-dev libffi-dev bison flex
+          libtool-bin gperf python3-docutils autopoint gettext \
+          unzip libtool gcc g++ gcc-multilib g++-multilib \
+          libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev \
+          cmake gawk fakeroot curl git xxd cpio pkg-config zlib1g-dev \
+          bison flex texinfo automake help2man wget
         sudo timedatectl set-timezone "$TZ"
 
     - name: 克隆源码
@@ -44,140 +42,192 @@ jobs:
         git clone --depth=1 $REPOSITORY_URL padavan
         cd padavan
         echo "COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-        echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
+        echo "BUILD_DATE=$(date +%Y%m%d-%H%M)" >> $GITHUB_ENV
 
-    - name: 下载工具链
-      run: |
-        cd padavan/toolchain-mipsel
-        mkdir -p toolchain-4.4.x
-        wget -qO- $TOOLCHAIN_URL | tar -xJ -C toolchain-4.4.x
-
-    - name: 生成纯净配置
+    - name: 应用纯净配置
       run: |
         cd padavan/trunk
+        
+        # 创建纯净配置文件
         cat > configs/templates/$DEVICE_NAME.config << 'EOF'
-        ### Target Vendor/Product
+        ### Target Vendor/Product (support only Ralink RT3883/MT7620/MT7621/MT7628)
         CONFIG_VENDOR=Ralink
         CONFIG_PRODUCT=MT7621
         
-        ### Target Product ID
+        ### Target ProductID (board select, max 12 symbols)
         CONFIG_FIRMWARE_PRODUCT_ID="RM2100"
         
-        ### 固件包含选项 - 基础必需组件 ###
-        CONFIG_FIRMWARE_INCLUDE_LANG_CN=y
+        ### Linux kernel and toolchain
+        CONFIG_FIRMWARE_INCLUDE_SFE=y
+        CONFIG_LINUXDIR=linux-4.4.x
         
-        ### Linux内核驱动 ###
-        CONFIG_FIRMWARE_WIFI_DRIVER=5.0
+        ############################################################
+        ### Linux kernel configuration
+        ############################################################
+        
+        ### Enable IPv6 support
         CONFIG_FIRMWARE_ENABLE_IPV6=y
+        
+        ### Enable USB support (disable for clean build)
         CONFIG_FIRMWARE_ENABLE_USB=n
         
-        ### 网络加速 ###
-        CONFIG_FIRMWARE_INCLUDE_SFE=y
+        ### Include WiFi driver and firmware
+        CONFIG_FIRMWARE_WIFI_DRIVER=5.0
         
-        ### 禁用非必需功能 - 保持纯净 ###
+        ############################################################
+        ### Userspace configuration - DISABLE ALL non-essential
+        ############################################################
+        
+        ### Include Web UI International Language Support
+        CONFIG_FIRMWARE_INCLUDE_LANG_CN=y
+        
+        ### Disable all VPN/Proxy services
         CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n
         CONFIG_FIRMWARE_INCLUDE_SSSERVER=n
-        CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=n
+        CONFIG_FIRMWARE_INCLUDE_V2RAY=n
+        CONFIG_FIRMWARE_INCLUDE_TROJAN=n
+        CONFIG_FIRMWARE_INCLUDE_XRAY=n
+        CONFIG_FIRMWARE_INCLUDE_TUNSAFE=n
+        CONFIG_FIRMWARE_INCLUDE_WIREGUARD=n
+        
+        ### Disable adblock/DNS services
         CONFIG_FIRMWARE_INCLUDE_ADBYBY=n
+        CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=n
+        CONFIG_FIRMWARE_INCLUDE_SMARTDNS=n
+        CONFIG_FIRMWARE_INCLUDE_ADGUARDHOME=n
+        
+        ### Disable remote access/tunnel services
         CONFIG_FIRMWARE_INCLUDE_FRPC=n
         CONFIG_FIRMWARE_INCLUDE_FRPS=n
-        CONFIG_FIRMWARE_INCLUDE_TUNSAFE=n
-        CONFIG_FIRMWARE_INCLUDE_ALIDDNS=n
-        CONFIG_FIRMWARE_INCLUDE_SMARTDNS=n
-        CONFIG_FIRMWARE_INCLUDE_SRELAY=n
-        CONFIG_FIRMWARE_INCLUDE_WYY=n
-        CONFIG_FIRMWARE_INCLUDE_WYYBIN=n
         CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n
         CONFIG_FIRMWARE_INCLUDE_DDNSTO=n
-        CONFIG_FIRMWARE_INCLUDE_ALDRIVER=n
+        CONFIG_FIRMWARE_INCLUDE_ALIDDNS=n
+        
+        ### Disable file sharing services
+        CONFIG_FIRMWARE_INCLUDE_SMBD=n
+        CONFIG_FIRMWARE_INCLUDE_SMBD36=n
+        CONFIG_FIRMWARE_INCLUDE_FTPD=n
+        
+        ### Disable authentication clients
         CONFIG_FIRMWARE_INCLUDE_MENTOHUST=n
         CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT=n
-        CONFIG_FIRMWARE_INCLUDE_NAPT66=n
-        CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER=n
-        CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CLIENT=n
-        CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CMD=n
-        CONFIG_FIRMWARE_INCLUDE_VLMCSD=n
+        CONFIG_FIRMWARE_INCLUDE_SRELAY=n
+        
+        ### Disable multimedia/entertainment
+        CONFIG_FIRMWARE_INCLUDE_WYY=n
+        CONFIG_FIRMWARE_INCLUDE_WYYBIN=n
+        
+        ### Disable diagnostic/utility tools
         CONFIG_FIRMWARE_INCLUDE_TTYD=n
         CONFIG_FIRMWARE_INCLUDE_LRZSZ=n
         CONFIG_FIRMWARE_INCLUDE_HTOP=n
         CONFIG_FIRMWARE_INCLUDE_NANO=n
         CONFIG_FIRMWARE_INCLUDE_IPERF3=n
-        CONFIG_FIRMWARE_INCLUDE_DUMP1090=n
-        CONFIG_FIRMWARE_INCLUDE_RTL_SDR=n
         CONFIG_FIRMWARE_INCLUDE_MTR=n
         CONFIG_FIRMWARE_INCLUDE_SOCAT=n
-        CONFIG_FIRMWARE_INCLUDE_SAMBA=n
-        CONFIG_FIRMWARE_INCLUDE_WINS=n
-        CONFIG_FIRMWARE_INCLUDE_SMBD=n
-        CONFIG_FIRMWARE_INCLUDE_SMBD36=n
-        CONFIG_FIRMWARE_INCLUDE_FTPD=n
+        
+        ### Disable SDR/Radio tools
+        CONFIG_FIRMWARE_INCLUDE_DUMP1090=n
+        CONFIG_FIRMWARE_INCLUDE_RTL_SDR=n
+        
+        ### Disable advanced network services
+        CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER=n
+        CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CLIENT=n
+        CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CMD=n
+        CONFIG_FIRMWARE_INCLUDE_VLMCSD=n
+        CONFIG_FIRMWARE_INCLUDE_NAPT66=n
+        
+        ### Disable cloud storage drivers
+        CONFIG_FIRMWARE_INCLUDE_ALDRIVER=n
+        
+        ### Disable additional SSL/SSH
+        CONFIG_FIRMWARE_INCLUDE_OPENSSH=n
         CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n
         CONFIG_FIRMWARE_INCLUDE_OPENSSL_EC=n
-        CONFIG_FIRMWARE_INCLUDE_OPENSSH=n
         CONFIG_FIRMWARE_INCLUDE_DDNS_SSL=n
         CONFIG_FIRMWARE_INCLUDE_HTTPS=n
         EOF
+        
+        echo "配置文件已生成"
+        cat configs/templates/$DEVICE_NAME.config
 
-    - name: 构建固件
+    - name: 下载并解压工具链
+      run: |
+        cd padavan/toolchain-mipsel
+        ./dl_toolchain.sh
+
+    - name: 开始编译固件
       run: |
         cd padavan/trunk
         ./clear_tree
         fakeroot ./build_firmware_modify $DEVICE_NAME
-        
-        echo "FIRMWARE_PATH=$(find images -name '*.trx' -type f)" >> $GITHUB_ENV
 
-    - name: 准备发布文件
+    - name: 整理编译产物
+      if: success()
       run: |
-        mkdir -p release
-        FIRMWARE_FILE=$(basename $FIRMWARE_PATH)
-        NEW_NAME="${DEVICE_NAME}_${BUILD_DATE}_${COMMIT_HASH}_${{ github.event.inputs.firmware_version }}.trx"
-        cp $FIRMWARE_PATH release/$NEW_NAME
-        echo "RELEASE_NAME=$NEW_NAME" >> $GITHUB_ENV
+        cd padavan/trunk/images
+        mkdir -p $GITHUB_WORKSPACE/release
         
-        cd release
-        sha256sum $NEW_NAME > ${NEW_NAME}.sha256sum
+        for file in *.trx; do
+          if [ -f "$file" ]; then
+            NEW_NAME="${DEVICE_NAME}_${BUILD_DATE}_${COMMIT_HASH}.trx"
+            cp "$file" $GITHUB_WORKSPACE/release/$NEW_NAME
+            echo "FIRMWARE_FILE=$NEW_NAME" >> $GITHUB_ENV
+            
+            # 生成SHA256
+            cd $GITHUB_WORKSPACE/release
+            sha256sum $NEW_NAME > ${NEW_NAME}.sha256
+            echo "固件编译完成: $NEW_NAME"
+          fi
+        done
 
     - name: 上传固件到Artifacts
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: Padavan_${{ env.DEVICE_NAME }}_${{ env.BUILD_DATE }}
         path: release/*
+        retention-days: 7
 
-    - name: 生成Release标签
-      id: tag
-      run: |
-        echo "release_tag=${{ env.BUILD_DATE }}_${{ env.COMMIT_HASH }}" >> $GITHUB_OUTPUT
-
-    - name: 创建Release
-      uses: softprops/action-gh-release@v1
-      if: github.event_name == 'workflow_dispatch'
+    - name: 创建Release发布
+      if: success() && github.event_name == 'workflow_dispatch'
+      uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        name: RM2100 纯净固件 ${{ env.BUILD_DATE }}
+        tag_name: ${{ env.BUILD_DATE }}
+        name: 红米AC2100纯净固件 ${{ env.BUILD_DATE }}
         body: |
-          ## 红米AC2100 Padavan 纯净固件
+          ## 📦 红米AC2100 (RM2100) Padavan纯净固件
           
-          **编译信息:**
-          - 设备型号: Redmi AC2100 (RM2100)
-          - 编译日期: ${{ env.BUILD_DATE }}
-          - 源码版本: ${{ env.COMMIT_HASH }}
-          - 固件特性: 纯净版本,无多余插件
+          ### 🔧 编译信息
+          - **设备型号**: Redmi AC2100 (RM2100)
+          - **编译时间**: ${{ env.BUILD_DATE }}
+          - **源码版本**: hanwckf/rt-n56u@${{ env.COMMIT_HASH }}
+          - **内核版本**: Linux 4.4.x
+          - **固件类型**: 纯净版,无第三方插件
           
-          **包含功能:**
-          - 基础路由功能
-          - IPv6支持
-          - 硬件NAT加速(SFE)
-          - MT7621 + MT7615N无线驱动
+          ### ✨ 固件特性
+          - ✅ 基础路由功能完整
+          - ✅ IPv6原生支持
+          - ✅ SFE硬件加速(Shortcut Forwarding Engine)
+          - ✅ MT7621 SoC + MT7603E/MT7612E无线驱动
+          - ❌ 已移除所有第三方插件(SS/V2Ray/Adbyby/Zerotier等)
+          - ❌ 已移除文件共享(Samba/FTP)
+          - ❌ 已移除SSH/Telnet工具
           
-          **刷入说明:**
-          1. 进入Breed/UFBC刷机模式
-          2. 上传本固件文件(.trx)
-          3. 等待刷入完成后重启
+          ### 📋 刷机说明
+          1. 路由器进入Breed/UBOOT控制台
+          2. 选择固件更新
+          3. 上传 `.trx` 文件
+          4. 等待刷写完成并重启
+          5. 默认IP: 192.168.2.1 | 用户名: admin | 密码: admin
           
-          **SHA256校验:**
+          ### 🔐 SHA256校验
           ```
-          $(cat release/*.sha256sum)
+          $(cat release/*.sha256)
           ```
+          
+          ---
+          ⚠️ **警告**: 此为纯净固件,仅适合需要稳定路由功能的用户使用
         files: release/*
