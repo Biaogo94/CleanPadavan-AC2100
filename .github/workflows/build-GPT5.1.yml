@@ -1,0 +1,90 @@
+name: Build Padavan RM2100 Firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  watch:
+    types: [started]
+
+env:
+  REPO_URL: https://github.com/hanwckf/padavan-4.4.git
+  REPO_BRANCH: master
+  CONFIG_FILE: RM2100.config
+  CUSTOM_SCRIPT: custom.sh
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    if: github.event.repository.owner.id == github.event.sender.id
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Initialize environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
+          fakeroot kmod cpio git python3-docutils gettext automake autopoint \
+          texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev \
+          libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget libc-dev-bin
+        sudo timedatectl set-timezone "$TZ"
+
+    - name: Clone source code
+      run: |
+        git clone --depth=1 $REPO_URL padavan
+        cd padavan
+
+    - name: Download toolchain
+      run: |
+        cd padavan/toolchain-mipsel
+        ./dl_toolchain.sh
+
+    - name: Apply custom configuration
+      run: |
+        cd padavan/trunk
+        cp $GITHUB_WORKSPACE/$CONFIG_FILE configs/templates/RM2100.config
+        cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
+        if [ -f "$GITHUB_WORKSPACE/$CUSTOM_SCRIPT" ]; then
+          cp $GITHUB_WORKSPACE/$CUSTOM_SCRIPT .
+          chmod +x $CUSTOM_SCRIPT
+          ./$CUSTOM_SCRIPT
+        fi
+
+    - name: Build firmware
+      run: |
+        cd padavan/trunk
+        fakeroot ./build_firmware_modify RM2100 0
+
+    - name: Organize files
+      id: organize
+      run: |
+        mkdir -p firmware
+        cd padavan/trunk/images
+        cp *.trx $GITHUB_WORKSPACE/firmware/
+        echo "RELEASE_TAG=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        echo "STATUS=success" >> $GITHUB_OUTPUT
+
+    - name: Upload firmware to artifact
+      uses: actions/upload-artifact@v3
+      if: steps.organize.outputs.STATUS == 'success'
+      with:
+        name: Padavan-RM2100-${{ steps.organize.outputs.RELEASE_TAG }}
+        path: firmware/*.trx
+
+    - name: Upload firmware to release
+      uses: softprops/action-gh-release@v1
+      if: steps.organize.outputs.STATUS == 'success'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.organize.outputs.RELEASE_TAG }}
+        name: Padavan RM2100 ${{ steps.organize.outputs.RELEASE_TAG }}
+        body: |
+          红米AC2100 Padavan纯净固件
+          - 编译时间: ${{ steps.organize.outputs.RELEASE_TAG }}
+          - 源码: hanwckf/padavan-4.4
+          - 设备: 红米AC2100 (RM2100)
+        files: firmware/*.trx
