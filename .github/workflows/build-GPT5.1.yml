@@ -1,90 +1,183 @@
-name: Build Padavan RM2100 Firmware
+name: Build Padavan for RM2100
 
 on:
   workflow_dispatch:
+    inputs:
+      firmware_version:
+        description: '固件版本标识'
+        required: false
+        default: 'clean'
   push:
-    branches: [main]
-  watch:
-    types: [started]
+    branches:
+      - main
+    paths:
+      - 'config/RM2100.config'
+      - '.github/workflows/build-rm2100.yml'
 
 env:
-  REPO_URL: https://github.com/hanwckf/padavan-4.4.git
-  REPO_BRANCH: master
-  CONFIG_FILE: RM2100.config
-  CUSTOM_SCRIPT: custom.sh
+  REPOSITORY_URL: https://github.com/hanwckf/padavan-4.4
+  TOOLCHAIN_URL: https://github.com/hanwckf/padavan-toolchain/releases/download/v1.1/mipsel-linux-uclibc.tar.xz
+  DEVICE_NAME: RM2100
+  FIRMWARE_AUTHOR: CleanBuild
   TZ: Asia/Shanghai
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
-    if: github.event.repository.owner.id == github.event.sender.id
-
+    runs-on: ubuntu-22.04
+    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v3
+    - name: 检出仓库
+      uses: actions/checkout@v4
 
-    - name: Initialize environment
+    - name: 初始化编译环境
       run: |
         sudo apt-get update
-        sudo apt-get install -y unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
-          fakeroot kmod cpio git python3-docutils gettext automake autopoint \
-          texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev \
-          libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget libc-dev-bin
+        sudo apt-get install -y --no-install-recommends \
+          libtool-bin gperf python3-docutils autopoint gettext txt2man \
+          unzip libtool libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev \
+          libltdl-dev gcc-multilib g++-multilib cmake gawk fakeroot curl git \
+          xxd cpio pkg-config zlib1g-dev libgmp-dev libmpc-dev libffi-dev bison flex
         sudo timedatectl set-timezone "$TZ"
 
-    - name: Clone source code
+    - name: 克隆源码
       run: |
-        git clone --depth=1 $REPO_URL padavan
+        git clone --depth=1 $REPOSITORY_URL padavan
         cd padavan
+        echo "COMMIT_HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        echo "BUILD_DATE=$(date +%Y%m%d)" >> $GITHUB_ENV
 
-    - name: Download toolchain
+    - name: 下载工具链
       run: |
         cd padavan/toolchain-mipsel
-        ./dl_toolchain.sh
+        mkdir -p toolchain-4.4.x
+        wget -qO- $TOOLCHAIN_URL | tar -xJ -C toolchain-4.4.x
 
-    - name: Apply custom configuration
+    - name: 生成纯净配置
       run: |
         cd padavan/trunk
-        cp $GITHUB_WORKSPACE/$CONFIG_FILE configs/templates/RM2100.config
-        cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
-        if [ -f "$GITHUB_WORKSPACE/$CUSTOM_SCRIPT" ]; then
-          cp $GITHUB_WORKSPACE/$CUSTOM_SCRIPT .
-          chmod +x $CUSTOM_SCRIPT
-          ./$CUSTOM_SCRIPT
-        fi
+        cat > configs/templates/$DEVICE_NAME.config << 'EOF'
+        ### Target Vendor/Product
+        CONFIG_VENDOR=Ralink
+        CONFIG_PRODUCT=MT7621
+        
+        ### Target Product ID
+        CONFIG_FIRMWARE_PRODUCT_ID="RM2100"
+        
+        ### 固件包含选项 - 基础必需组件 ###
+        CONFIG_FIRMWARE_INCLUDE_LANG_CN=y
+        
+        ### Linux内核驱动 ###
+        CONFIG_FIRMWARE_WIFI_DRIVER=5.0
+        CONFIG_FIRMWARE_ENABLE_IPV6=y
+        CONFIG_FIRMWARE_ENABLE_USB=n
+        
+        ### 网络加速 ###
+        CONFIG_FIRMWARE_INCLUDE_SFE=y
+        
+        ### 禁用非必需功能 - 保持纯净 ###
+        CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n
+        CONFIG_FIRMWARE_INCLUDE_SSSERVER=n
+        CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=n
+        CONFIG_FIRMWARE_INCLUDE_ADBYBY=n
+        CONFIG_FIRMWARE_INCLUDE_FRPC=n
+        CONFIG_FIRMWARE_INCLUDE_FRPS=n
+        CONFIG_FIRMWARE_INCLUDE_TUNSAFE=n
+        CONFIG_FIRMWARE_INCLUDE_ALIDDNS=n
+        CONFIG_FIRMWARE_INCLUDE_SMARTDNS=n
+        CONFIG_FIRMWARE_INCLUDE_SRELAY=n
+        CONFIG_FIRMWARE_INCLUDE_WYY=n
+        CONFIG_FIRMWARE_INCLUDE_WYYBIN=n
+        CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n
+        CONFIG_FIRMWARE_INCLUDE_DDNSTO=n
+        CONFIG_FIRMWARE_INCLUDE_ALDRIVER=n
+        CONFIG_FIRMWARE_INCLUDE_MENTOHUST=n
+        CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT=n
+        CONFIG_FIRMWARE_INCLUDE_NAPT66=n
+        CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER=n
+        CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CLIENT=n
+        CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CMD=n
+        CONFIG_FIRMWARE_INCLUDE_VLMCSD=n
+        CONFIG_FIRMWARE_INCLUDE_TTYD=n
+        CONFIG_FIRMWARE_INCLUDE_LRZSZ=n
+        CONFIG_FIRMWARE_INCLUDE_HTOP=n
+        CONFIG_FIRMWARE_INCLUDE_NANO=n
+        CONFIG_FIRMWARE_INCLUDE_IPERF3=n
+        CONFIG_FIRMWARE_INCLUDE_DUMP1090=n
+        CONFIG_FIRMWARE_INCLUDE_RTL_SDR=n
+        CONFIG_FIRMWARE_INCLUDE_MTR=n
+        CONFIG_FIRMWARE_INCLUDE_SOCAT=n
+        CONFIG_FIRMWARE_INCLUDE_SAMBA=n
+        CONFIG_FIRMWARE_INCLUDE_WINS=n
+        CONFIG_FIRMWARE_INCLUDE_SMBD=n
+        CONFIG_FIRMWARE_INCLUDE_SMBD36=n
+        CONFIG_FIRMWARE_INCLUDE_FTPD=n
+        CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n
+        CONFIG_FIRMWARE_INCLUDE_OPENSSL_EC=n
+        CONFIG_FIRMWARE_INCLUDE_OPENSSH=n
+        CONFIG_FIRMWARE_INCLUDE_DDNS_SSL=n
+        CONFIG_FIRMWARE_INCLUDE_HTTPS=n
+        EOF
 
-    - name: Build firmware
+    - name: 构建固件
       run: |
         cd padavan/trunk
-        fakeroot ./build_firmware_modify RM2100 0
+        ./clear_tree
+        fakeroot ./build_firmware_modify $DEVICE_NAME
+        
+        echo "FIRMWARE_PATH=$(find images -name '*.trx' -type f)" >> $GITHUB_ENV
 
-    - name: Organize files
-      id: organize
+    - name: 准备发布文件
       run: |
-        mkdir -p firmware
-        cd padavan/trunk/images
-        cp *.trx $GITHUB_WORKSPACE/firmware/
-        echo "RELEASE_TAG=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        echo "STATUS=success" >> $GITHUB_OUTPUT
+        mkdir -p release
+        FIRMWARE_FILE=$(basename $FIRMWARE_PATH)
+        NEW_NAME="${DEVICE_NAME}_${BUILD_DATE}_${COMMIT_HASH}_${{ github.event.inputs.firmware_version }}.trx"
+        cp $FIRMWARE_PATH release/$NEW_NAME
+        echo "RELEASE_NAME=$NEW_NAME" >> $GITHUB_ENV
+        
+        cd release
+        sha256sum $NEW_NAME > ${NEW_NAME}.sha256sum
 
-    - name: Upload firmware to artifact
-      uses: actions/upload-artifact@v3
-      if: steps.organize.outputs.STATUS == 'success'
+    - name: 上传固件到Artifacts
+      uses: actions/upload-artifact@v4
       with:
-        name: Padavan-RM2100-${{ steps.organize.outputs.RELEASE_TAG }}
-        path: firmware/*.trx
+        name: Padavan_${{ env.DEVICE_NAME }}_${{ env.BUILD_DATE }}
+        path: release/*
 
-    - name: Upload firmware to release
+    - name: 生成Release标签
+      id: tag
+      run: |
+        echo "release_tag=${{ env.BUILD_DATE }}_${{ env.COMMIT_HASH }}" >> $GITHUB_OUTPUT
+
+    - name: 创建Release
       uses: softprops/action-gh-release@v1
-      if: steps.organize.outputs.STATUS == 'success'
+      if: github.event_name == 'workflow_dispatch'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ steps.organize.outputs.RELEASE_TAG }}
-        name: Padavan RM2100 ${{ steps.organize.outputs.RELEASE_TAG }}
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        name: RM2100 纯净固件 ${{ env.BUILD_DATE }}
         body: |
-          红米AC2100 Padavan纯净固件
-          - 编译时间: ${{ steps.organize.outputs.RELEASE_TAG }}
-          - 源码: hanwckf/padavan-4.4
-          - 设备: 红米AC2100 (RM2100)
-        files: firmware/*.trx
+          ## 红米AC2100 Padavan 纯净固件
+          
+          **编译信息:**
+          - 设备型号: Redmi AC2100 (RM2100)
+          - 编译日期: ${{ env.BUILD_DATE }}
+          - 源码版本: ${{ env.COMMIT_HASH }}
+          - 固件特性: 纯净版本,无多余插件
+          
+          **包含功能:**
+          - 基础路由功能
+          - IPv6支持
+          - 硬件NAT加速(SFE)
+          - MT7621 + MT7615N无线驱动
+          
+          **刷入说明:**
+          1. 进入Breed/UFBC刷机模式
+          2. 上传本固件文件(.trx)
+          3. 等待刷入完成后重启
+          
+          **SHA256校验:**
+          ```
+          $(cat release/*.sha256sum)
+          ```
+        files: release/*
