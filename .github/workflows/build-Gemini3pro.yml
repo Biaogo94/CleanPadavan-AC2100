@@ -3,136 +3,141 @@ name: Build Redmi AC2100 Padavan
 on:
   workflow_dispatch:
     inputs:
-      target_repo:
-        description: '选择固件内核版本'
+      target_version:
+        description: '选择固件版本 / Firmware Version'
         required: true
-        default: 'hanwckf-3.4'
+        default: '3.4'
         type: choice
         options:
-          - 'hanwckf-3.4'
-          - 'meisreallyba-4.4'
+          - '3.4 (hanwckf - Stable/Legacy)'
+          - '4.4 (MeIsReallyBa - Kernel 4.4)'
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     env:
-      # 根据用户选择设置仓库地址
-      REPO_URL: ${{ github.event.inputs.target_repo == 'hanwckf-3.4' && 'https://github.com/hanwckf/rt-n56u.git' || 'https://github.com/MeIsReallyBa/padavan-4.4.git' }}
-      REPO_BRANCH: ${{ github.event.inputs.target_repo == 'hanwckf-3.4' && 'master' || 'main' }}
+      # 根据用户选择动态设置变量
+      REPO_URL: ${{ inputs.target_version == '3.4 (hanwckf - Stable/Legacy)' && 'https://github.com/hanwckf/rt-n56u.git' || 'https://github.com/MeIsReallyBa/padavan-4.4.git' }}
+      REPO_BRANCH: ${{ inputs.target_version == '3.4 (hanwckf - Stable/Legacy)' && 'master' || 'main' }}
       TARGET_DEVICE: "RM2100"
-      
+      WORK_DIR: "/opt/rt-n56u"
+
     steps:
     - name: Checkout Code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Prepare Environment
+    - name: Initialize Compilation Environment
       run: |
+        echo "Processing dependencies for Ubuntu 22.04..."
         sudo apt-get update
-        sudo apt-get install -y unzip libtool-bin curl cmake gperf gawk flex bison nano xxd \
-        fakeroot kmod cpio git python3-docutils gettext automake autopoint \
-        texinfo build-essential help2man pkg-config zlib1g-dev libgmp3-dev \
-        libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget libc-dev-bin
+        sudo apt-get install -y \
+          git unzip libtool-bin curl cmake gperf gawk flex bison \
+          nano xxd fakeroot kmod cpio git-doc vim-common \
+          libncurses5-dev libncurses5
         
-        # 清理空间以防止构建失败
+        # 针对 4.4 内核版本可能需要的额外依赖
+        if [[ "${{ inputs.target_version }}" == *"4.4"* ]]; then
+          sudo apt-get install -y python3-docutils autopoint texinfo
+        fi
+        
+        # 清理不必要的空间以确保编译顺畅
         sudo apt-get clean
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo rm -rf /var/lib/apt/lists/*
 
     - name: Clone Source Code
       run: |
-        echo "Cloning form $REPO_URL..."
-        git clone --depth=1 $REPO_URL /opt/rt-n56u
+        echo "Cloning source from $REPO_URL..."
+        git clone --depth=1 --branch $REPO_BRANCH $REPO_URL $WORK_DIR
 
     - name: Prepare Toolchain
       run: |
-        cd /opt/rt-n56u/toolchain-mipsel
-        # 3.4 和 4.4 的工具链构建脚本略有不同，但通常都提供了一个脚本来处理
-        # 这里的清理和构建步骤能确保工具链与源码匹配
-        ./clean_toolchain
-        ./build_toolchain
+        cd $WORK_DIR/toolchain-mipsel
+        # 两个仓库通常都包含预编译 toolchain 下载脚本，避免自行编译耗时过长
+        # 3.4 和 4.4 的 toolchain 不通用，必须使用源码自带的脚本下载
+        sh dl_toolchain.sh
 
-    - name: Customize & Optimize Configuration
+    - name: Customize & Optimize Config (Performance & Clean)
       run: |
-        cd /opt/rt-n56u/trunk
+        cd $WORK_DIR/trunk/configs/templates
+        CONFIG_FILE="$TARGET_DEVICE.config"
         
-        # 1. 复制 RM2100 的默认配置文件
-        if [ ! -f configs/templates/$TARGET_DEVICE.config ]; then
-          echo "Error: Config file for $TARGET_DEVICE not found!"
-          exit 1
-        fi
-        cp configs/templates/$TARGET_DEVICE.config .config
-
-        # =======================================================
-        # 2. 纯净模式：移除所有不必要的插件 (Bloatware Removal)
-        # =======================================================
-        # 使用 sed 批量关闭常见的插件
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_MT7626=y/CONFIG_FIRMWARE_INCLUDE_MT7626=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=y/CONFIG_FIRMWARE_INCLUDE_ARIA=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA_WEB_CONTROL=y/CONFIG_FIRMWARE_INCLUDE_ARIA_WEB_CONTROL=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION_WEB_CONTROL=y/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION_WEB_CONTROL=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=y/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_XRAY=y/CONFIG_FIRMWARE_INCLUDE_XRAY=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_V2RAY=y/CONFIG_FIRMWARE_INCLUDE_V2RAY=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_TROJAN=y/CONFIG_FIRMWARE_INCLUDE_TROJAN=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_ADBYBY=y/CONFIG_FIRMWARE_INCLUDE_ADBYBY=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_KOOLPROXY=y/CONFIG_FIRMWARE_INCLUDE_KOOLPROXY=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_ZEROTIER=y/CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_ALIDDNS=y/CONFIG_FIRMWARE_INCLUDE_ALIDDNS=n/g' .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_DDNS_SSL=y/CONFIG_FIRMWARE_INCLUDE_DDNS_SSL=n/g' .config
-        # 移除 USB 相关 (如果不需要 USB 功能可取消注释，AC2100没有USB口，通常默认已关闭或保留核心驱动)
-        # sed -i 's/CONFIG_FIRMWARE_ENABLE_USB=y/CONFIG_FIRMWARE_ENABLE_USB=n/g' .config
-
-        # =======================================================
-        # 3. 性能调优 (Performance Tuning)
-        # =======================================================
+        echo "Starting customization for $CONFIG_FILE..."
         
-        # 开启硬件 NAT 加速 (Flow Offload)，这是 MT7621 的核心性能来源
-        sed -i 's/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=n/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y/g' .config
+        # ==========================================
+        # 1. 净化固件 (Remove Bloatware)
+        # ==========================================
+        # 禁用大部分插件，保留极其核心的功能
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=y/CONFIG_FIRMWARE_INCLUDE_ARIA=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_WGET=y/CONFIG_FIRMWARE_INCLUDE_WGET=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENVPN=y/CONFIG_FIRMWARE_INCLUDE_OPENVPN=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=y/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SSSERVER=y/CONFIG_FIRMWARE_INCLUDE_SSSERVER=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER=y/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CLIENT=y/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CLIENT=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CMD=y/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CMD=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_VLMCSD=y/CONFIG_FIRMWARE_INCLUDE_VLMCSD=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_TTYD=y/CONFIG_FIRMWARE_INCLUDE_TTYD=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_XRAY=y/CONFIG_FIRMWARE_INCLUDE_XRAY=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_V2RAY=y/CONFIG_FIRMWARE_INCLUDE_V2RAY=n/g' $CONFIG_FILE
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_TROJAN=y/CONFIG_FIRMWARE_INCLUDE_TROJAN=n/g' $CONFIG_FILE
+        # 甚至禁用 USB 应用（如果只需做纯路由）
+        # sed -i 's/CONFIG_FIRMWARE_ENABLE_USB=y/CONFIG_FIRMWARE_ENABLE_USB=n/g' $CONFIG_FILE
+        
+        # ==========================================
+        # 2. 性能优化 (Performance Tuning)
+        # ==========================================
+        # 强制开启硬件 NAT (Flow Offload)，这是 MT7621 性能的核心
+        sed -i 's/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=n/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y/g' $CONFIG_FILE
         # 确保开启
-        if ! grep -q "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y" .config; then
-          echo "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y" >> .config
+        if ! grep -q "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y" $CONFIG_FILE; then
+           echo "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y" >> $CONFIG_FILE
         fi
 
-        # 开启 TCP BBR 拥塞控制 (优化网络吞吐)
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_BBR=n/CONFIG_FIRMWARE_INCLUDE_BBR=y/g' .config
-        if ! grep -q "CONFIG_FIRMWARE_INCLUDE_BBR=y" .config; then
-          echo "CONFIG_FIRMWARE_INCLUDE_BBR=y" >> .config
+        # 优化内存管理，开启 ZRAM（如果支持）
+        if grep -q "CONFIG_FIRMWARE_INCLUDE_ZRAM" $CONFIG_FILE; then
+             sed -i 's/CONFIG_FIRMWARE_INCLUDE_ZRAM=n/CONFIG_FIRMWARE_INCLUDE_ZRAM=y/g' $CONFIG_FILE
         fi
-        
-        # 开启 IPv6 支持 (现代网络必备)
-        sed -i 's/CONFIG_FIRMWARE_ENABLE_IPV6=n/CONFIG_FIRMWARE_ENABLE_IPV6=y/g' .config
-        
-        # 开启 HTTPS 支持 (管理页面安全)
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_HTTPS=n/CONFIG_FIRMWARE_INCLUDE_HTTPS=y/g' .config
 
-        # CPU 编译器优化 (针对 MIPS 架构优化大小和速度)
-        # 注意：不要轻易开启 CONFIG_FIRMWARE_CPU_1000MHZ，除非源码明确支持，否则会导致不开机
-        # Padavan 源码通常硬编码了频率，这里我们通过清理无用代码来间接提升性能
+        # 开启 OpenSSL 优化（通常会有助于 HTTPS 性能）
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' $CONFIG_FILE
         
-        # 检查配置内容
-        echo "=== Configuration Check ==="
-        grep "CONFIG_FIRMWARE_INCLUDE_" .config
-        grep "FLOWOFFLOAD" .config
+        # ==========================================
+        # 3. 文件系统优化
+        # ==========================================
+        # 确保使用 squashfs 压缩比最高的 xz 算法（通常默认就是，但再次确认）
+        # Padavan 构建脚本通常自动处理，此处做日志确认即可
+        echo "Config optimization complete. Current configuration:"
+        grep "CONFIG_FIRMWARE_INCLUDE" $CONFIG_FILE | head -n 20
 
-    - name: Build Firmware
+    - name: Compile Firmware
       run: |
-        cd /opt/rt-n56u/trunk
-        # 清理之前的构建环境
+        cd $WORK_DIR/trunk
+        
+        # 清理旧的构建环境
         ./clear_tree
+        
         # 开始构建
-        ./build_firmware_modify $TARGET_DEVICE 0
-        # 如果 build_firmware_modify 不存在，尝试标准命令
-        # ./build_firmware $TARGET_DEVICE
+        # 注意：hanwckf 和 4.4 版本的构建脚本入口通常都是 build_firmware_modify
+        fakeroot ./build_firmware_modify $TARGET_DEVICE
 
     - name: Organize Artifacts
+      id: organize
       run: |
-        mkdir -p ./firmware
-        find /opt/rt-n56u/trunk/images -name "*.trx" -exec cp {} ./firmware/ \;
-        echo "Build Date: $(date +'%Y-%m-%d')" > ./firmware/build_info.txt
-        echo "Source: ${{ github.event.inputs.target_repo }}" >> ./firmware/build_info.txt
+        # 查找生成的 TRX 文件
+        FIRMWARE_PATH=$(find $WORK_DIR/trunk/images -name "*.trx" -type f | head -n 1)
+        if [ -f "$FIRMWARE_PATH" ]; then
+          echo "firmware_path=$FIRMWARE_PATH" >> $GITHUB_OUTPUT
+          FILE_NAME=$(basename "$FIRMWARE_PATH")
+          echo "file_name=$FILE_NAME" >> $GITHUB_OUTPUT
+          echo "Firmware found: $FIRMWARE_PATH"
+        else
+          echo "Error: Firmware file not found!"
+          exit 1
+        fi
 
     - name: Upload Firmware
       uses: actions/upload-artifact@v4
       with:
-        name: Padavan-Redmi-AC2100-${{ github.event.inputs.target_repo }}
-        path: ./firmware/
+        name: Padavan-${{ inputs.target_version }}-${{ steps.organize.outputs.file_name }}
+        path: ${{ steps.organize.outputs.firmware_path }}
