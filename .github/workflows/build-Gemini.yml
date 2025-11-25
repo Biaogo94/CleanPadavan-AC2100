@@ -1,4 +1,4 @@
-name: Build Redmi AC2100 Padavan (Final Fix)
+name: Build Redmi AC2100 Padavan (Gemini 3 Pro)
 
 on:
   workflow_dispatch:
@@ -38,14 +38,18 @@ jobs:
         WORK_DIR="$GITHUB_WORKSPACE/padavan"
         mkdir -p $WORK_DIR
         
+        # 逻辑判断：设置 URL 并提取干净的版本号用于后续文件名
         if [[ "${{ inputs.target_version }}" == *"3.4"* ]]; then
           REPO_URL="https://github.com/hanwckf/rt-n56u.git"
           REPO_BRANCH="master"
           echo "Selected Version: 3.4 (hanwckf)"
+          # 将干净的版本号写入环境变量，供后续步骤使用
+          echo "BUILD_VER=3.4" >> $GITHUB_ENV
         else
           REPO_URL="https://github.com/MeIsReallyBa/padavan-4.4.git"
           REPO_BRANCH="main"
           echo "Selected Version: 4.4 (MeIsReallyBa)"
+          echo "BUILD_VER=4.4" >> $GITHUB_ENV
         fi
         
         # 定义目标机型
@@ -104,20 +108,19 @@ jobs:
           exit 1
         fi
         
-        echo "Debug: .config exists. Checking FlowOffload:"
-        grep "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD" .config
-        
         # =======================================================
-        # 5. 执行编译 (FIXED: 补全了参数)
+        # 5. 执行编译
         # =======================================================
         echo "Starting Build Process for $TARGET_DEVICE..."
         
-        # 必须加上 $TARGET_DEVICE 参数，否则脚本会打印帮助信息并退出
+        # 这里加上了 $TARGET_DEVICE 参数，解决了上一次的报错
         fakeroot ./build_firmware $TARGET_DEVICE
         
     - name: Organize & Upload Artifacts
       uses: actions/upload-artifact@v4
       if: success()
       with:
-        name: Padavan-RM2100-${{ inputs.target_version }}
+        # 修复点：这里不再直接使用包含斜杠的 inputs 文本
+        # 而是使用我们在脚本中定义的干净环境变量 env.BUILD_VER
+        name: Padavan-RM2100-${{ env.BUILD_VER }}
         path: ${{ github.workspace }}/padavan/trunk/images/*.trx
