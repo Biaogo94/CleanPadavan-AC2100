@@ -12,6 +12,10 @@ on:
           - '3.4 (hanwckf - Stable/Legacy)'
           - '4.4 (MeIsReallyBa - Kernel 4.4)'
 
+# 权限设置：必须赋予写入权限才能创建 Release
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -33,17 +37,20 @@ jobs:
     - name: Run Compilation Logic
       run: |
         # =======================================================
-        # 1. 定义变量与路径
+        # 1. 定义变量、路径与日期
         # =======================================================
         WORK_DIR="$GITHUB_WORKSPACE/padavan"
         mkdir -p $WORK_DIR
         
-        # 逻辑判断：设置 URL 并提取干净的版本号用于后续文件名
+        # 获取当前日期，格式如 20251128
+        CURRENT_DATE=$(date +%Y%m%d)
+        echo "DATE=$CURRENT_DATE" >> $GITHUB_ENV
+        
+        # 逻辑判断：设置 URL 并提取干净的版本号
         if [[ "${{ inputs.target_version }}" == *"3.4"* ]]; then
           REPO_URL="https://github.com/hanwckf/rt-n56u.git"
           REPO_BRANCH="master"
           echo "Selected Version: 3.4 (hanwckf)"
-          # 将干净的版本号写入环境变量，供后续步骤使用
           echo "BUILD_VER=3.4" >> $GITHUB_ENV
         else
           REPO_URL="https://github.com/MeIsReallyBa/padavan-4.4.git"
@@ -52,7 +59,6 @@ jobs:
           echo "BUILD_VER=4.4" >> $GITHUB_ENV
         fi
         
-        # 定义目标机型
         TARGET_DEVICE="RM2100"
         
         # =======================================================
@@ -69,17 +75,15 @@ jobs:
         # 3. 配置文件修改
         # =======================================================
         cd $WORK_DIR/trunk
-        
         TEMPLATE_PATH="configs/templates/$TARGET_DEVICE.config"
+        
         if [ ! -f "$TEMPLATE_PATH" ]; then
-          echo "Error: Template config $TEMPLATE_PATH not found!"
-          ls -R configs/templates
+          echo "Error: Template config not found!"
           exit 1
         fi
         
-        echo "Applying customization to $TEMPLATE_PATH..."
-        
-        # --- 净化插件 ---
+        echo "Applying customization..."
+        # --- 净化插件 (禁用无关功能) ---
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=y/CONFIG_FIRMWARE_INCLUDE_ARIA=n/g' $TEMPLATE_PATH
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=n/g' $TEMPLATE_PATH
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_WGET=y/CONFIG_FIRMWARE_INCLUDE_WGET=n/g' $TEMPLATE_PATH
@@ -91,36 +95,58 @@ jobs:
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_V2RAY=y/CONFIG_FIRMWARE_INCLUDE_V2RAY=n/g' $TEMPLATE_PATH
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_TROJAN=y/CONFIG_FIRMWARE_INCLUDE_TROJAN=n/g' $TEMPLATE_PATH
         
-        # --- 性能优化 ---
+        # --- 性能优化 (开启 FlowOffload) ---
         sed -i 's/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=n/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y/g' $TEMPLATE_PATH
         if ! grep -q "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD" $TEMPLATE_PATH; then
            echo "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y" >> $TEMPLATE_PATH
         fi
         
         # =======================================================
-        # 4. 生成 .config 并验证
+        # 4. 生成 .config
         # =======================================================
-        echo "Copying template to .config..."
         cp -f $TEMPLATE_PATH .config
-        
         if [ ! -f .config ]; then
-          echo "FATAL ERROR: .config file was not created successfully!"
+          echo "FATAL ERROR: .config file was not created!"
           exit 1
         fi
         
         # =======================================================
         # 5. 执行编译
         # =======================================================
-        echo "Starting Build Process for $TARGET_DEVICE..."
-        
-        # 这里加上了 $TARGET_DEVICE 参数，解决了上一次的报错
+        echo "Starting Build..."
         fakeroot ./build_firmware $TARGET_DEVICE
         
-    - name: Organize & Upload Artifacts
+    - name: Organize Artifacts
+      # 这一步不是上传，而是确保文件路径正确，方便后续步骤调用
+      run: |
+        # 将生成的 trx 文件移动到一个确定的目录，方便上传
+        mkdir -p ./output_firmware
+        cp ${{ github.workspace }}/padavan/trunk/images/*.trx ./output_firmware/
+        echo "FIRMWARE_PATH=./output_firmware" >> $GITHUB_ENV
+
+    - name: Upload Firmware to Releases
+      uses: softprops/action-gh-release@v1
+      if: success()
+      with:
+        # Tag 名称：例如 v20251128-3.4
+        tag_name: v${{ env.DATE }}-${{ env.BUILD_VER }}
+        # Release 标题：例如 Redmi AC2100 Padavan 3.4 (20251128)
+        name: Redmi AC2100 Padavan ${{ env.BUILD_VER }} (${{ env.DATE }})
+        body: |
+          自动构建固件
+          - 机型: Redmi AC2100
+          - 版本: Padavan ${{ env.BUILD_VER }}
+          - 编译日期: ${{ env.DATE }}
+          - 插件: 纯净版 (无插件)
+          - 硬件加速: 开启 (Flow Offload)
+        files: ${{ env.FIRMWARE_PATH }}/*.trx
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # 保留 Artifact 上传（作为备份，如果不需要可以删除这一段）
+    - name: Upload Artifacts Backup
       uses: actions/upload-artifact@v4
       if: success()
       with:
-        # 修复点：这里不再直接使用包含斜杠的 inputs 文本
-        # 而是使用我们在脚本中定义的干净环境变量 env.BUILD_VER
-        name: Padavan-RM2100-${{ env.BUILD_VER }}
-        path: ${{ github.workspace }}/padavan/trunk/images/*.trx
+        name: Padavan-Backup-${{ env.DATE }}
+        path: ${{ env.FIRMWARE_PATH }}/*.trx
