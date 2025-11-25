@@ -1,4 +1,4 @@
-name: Build Redmi AC2100 Padavan (Fixed)
+name: Build Redmi AC2100 Padavan (Final Fix)
 
 on:
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
     - name: Run Compilation Logic
       run: |
         # =======================================================
-        # 1. 定义变量与路径 (使用当前工作区，不使用 /opt)
+        # 1. 定义变量与路径
         # =======================================================
         WORK_DIR="$GITHUB_WORKSPACE/padavan"
         mkdir -p $WORK_DIR
@@ -48,6 +48,7 @@ jobs:
           echo "Selected Version: 4.4 (MeIsReallyBa)"
         fi
         
+        # 定义目标机型
         TARGET_DEVICE="RM2100"
         
         # =======================================================
@@ -58,15 +59,13 @@ jobs:
         
         echo "Preparing Toolchain..."
         cd $WORK_DIR/toolchain-mipsel
-        # 使用源码自带脚本下载 toolchain，这是最稳妥的
         sh dl_toolchain.sh
         
         # =======================================================
-        # 3. 配置文件修改 (Modifying Config)
+        # 3. 配置文件修改
         # =======================================================
         cd $WORK_DIR/trunk
         
-        # 定位模板文件
         TEMPLATE_PATH="configs/templates/$TARGET_DEVICE.config"
         if [ ! -f "$TEMPLATE_PATH" ]; then
           echo "Error: Template config $TEMPLATE_PATH not found!"
@@ -76,7 +75,7 @@ jobs:
         
         echo "Applying customization to $TEMPLATE_PATH..."
         
-        # --- 净化插件 (Purge Plugins) ---
+        # --- 净化插件 ---
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=y/CONFIG_FIRMWARE_INCLUDE_ARIA=n/g' $TEMPLATE_PATH
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=n/g' $TEMPLATE_PATH
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_WGET=y/CONFIG_FIRMWARE_INCLUDE_WGET=n/g' $TEMPLATE_PATH
@@ -88,41 +87,33 @@ jobs:
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_V2RAY=y/CONFIG_FIRMWARE_INCLUDE_V2RAY=n/g' $TEMPLATE_PATH
         sed -i 's/CONFIG_FIRMWARE_INCLUDE_TROJAN=y/CONFIG_FIRMWARE_INCLUDE_TROJAN=n/g' $TEMPLATE_PATH
         
-        # --- 性能优化 (Performance) ---
-        # 强制开启 Flow Offload (硬件NAT)
+        # --- 性能优化 ---
         sed -i 's/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=n/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y/g' $TEMPLATE_PATH
-        # 如果文件中原本没有这行，强制追加
         if ! grep -q "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD" $TEMPLATE_PATH; then
            echo "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y" >> $TEMPLATE_PATH
         fi
         
         # =======================================================
-        # 4. 生成 .config 并验证 (CRITICAL FIX)
+        # 4. 生成 .config 并验证
         # =======================================================
         echo "Copying template to .config..."
         cp -f $TEMPLATE_PATH .config
         
-        # 强制检查：如果 .config 不存在，立刻报错停止，不浪费时间
         if [ ! -f .config ]; then
           echo "FATAL ERROR: .config file was not created successfully!"
           exit 1
         fi
         
-        # 打印 .config 信息以供调试
-        echo "Debug: .config exists. Size info:"
-        ls -l .config
-        echo "Debug: Checking FlowOffload setting in final .config:"
+        echo "Debug: .config exists. Checking FlowOffload:"
         grep "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD" .config
         
         # =======================================================
-        # 5. 执行编译
+        # 5. 执行编译 (FIXED: 补全了参数)
         # =======================================================
-        echo "Starting Build Process..."
+        echo "Starting Build Process for $TARGET_DEVICE..."
         
-        # 警告：绝对不要在这里运行 ./clear_tree，它会删除我们刚生成的 .config
-        
-        # 直接调用核心构建脚本，跳过可能出错的 wrapper
-        fakeroot ./build_firmware
+        # 必须加上 $TARGET_DEVICE 参数，否则脚本会打印帮助信息并退出
+        fakeroot ./build_firmware $TARGET_DEVICE
         
     - name: Organize & Upload Artifacts
       uses: actions/upload-artifact@v4
