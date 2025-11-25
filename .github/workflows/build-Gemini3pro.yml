@@ -114,12 +114,28 @@ jobs:
       run: |
         cd $WORK_DIR/trunk
         
-        # 清理旧的构建环境
-        ./clear_tree
+        # 1. 清理旧构建环境
+        if [ -f ./clear_tree ]; then
+          ./clear_tree
+        fi
         
-        # 开始构建
-        # 注意：hanwckf 和 4.4 版本的构建脚本入口通常都是 build_firmware_modify
-        fakeroot ./build_firmware_modify $TARGET_DEVICE
+        # 2. 【修复核心】手动生成 .config 文件
+        # 这一步至关重要，强制将我们修改好的模板复制为构建所需的 .config
+        echo "Copying config file manually..."
+        cp -f configs/templates/$TARGET_DEVICE.config .config
+        
+        # 3. 验证 .config 是否存在以及关键修改是否生效 (用于排错)
+        if [ ! -f .config ]; then
+          echo "Error: .config file creation failed!"
+          exit 1
+        fi
+        echo "Verifying FlowOffload setting:"
+        grep "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD" .config
+        
+        # 4. 【修复核心】直接运行构建
+        # 既然我们已经手动准备好了 .config，就直接调用核心构建脚本 ./build_firmware
+        # 这样可以避开 build_firmware_modify 脚本可能存在的路径或逻辑错误
+        fakeroot ./build_firmware
 
     - name: Organize Artifacts
       id: organize
