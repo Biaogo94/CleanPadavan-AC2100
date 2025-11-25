@@ -1,4 +1,4 @@
-name: Build Redmi AC2100 Padavan
+name: Build Redmi AC2100 Padavan (Fixed)
 
 on:
   workflow_dispatch:
@@ -15,145 +15,118 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    env:
-      # 根据用户选择动态设置变量
-      REPO_URL: ${{ inputs.target_version == '3.4 (hanwckf - Stable/Legacy)' && 'https://github.com/hanwckf/rt-n56u.git' || 'https://github.com/MeIsReallyBa/padavan-4.4.git' }}
-      REPO_BRANCH: ${{ inputs.target_version == '3.4 (hanwckf - Stable/Legacy)' && 'master' || 'main' }}
-      TARGET_DEVICE: "RM2100"
-      WORK_DIR: "/opt/rt-n56u"
-
+    
     steps:
-    - name: Checkout Code
+    - name: Checkout CI Scripts
       uses: actions/checkout@v4
 
-    - name: Initialize Compilation Environment
+    - name: Prepare Environment
       run: |
-        echo "Processing dependencies for Ubuntu 22.04..."
         sudo apt-get update
         sudo apt-get install -y \
-          git unzip libtool-bin curl cmake gperf gawk flex bison \
+          libtool-bin curl cmake gperf gawk flex bison \
           nano xxd fakeroot kmod cpio git-doc vim-common \
-          libncurses5-dev libncurses5
-        
-        # 针对 4.4 内核版本可能需要的额外依赖
-        if [[ "${{ inputs.target_version }}" == *"4.4"* ]]; then
-          sudo apt-get install -y python3-docutils autopoint texinfo
-        fi
-        
-        # 清理不必要的空间以确保编译顺畅
+          libncurses5-dev libncurses5 \
+          python3-docutils autopoint texinfo
         sudo apt-get clean
-        sudo rm -rf /var/lib/apt/lists/*
 
-    - name: Clone Source Code
+    - name: Run Compilation Logic
       run: |
-        echo "Cloning source from $REPO_URL..."
+        # =======================================================
+        # 1. 定义变量与路径 (使用当前工作区，不使用 /opt)
+        # =======================================================
+        WORK_DIR="$GITHUB_WORKSPACE/padavan"
+        mkdir -p $WORK_DIR
+        
+        if [[ "${{ inputs.target_version }}" == *"3.4"* ]]; then
+          REPO_URL="https://github.com/hanwckf/rt-n56u.git"
+          REPO_BRANCH="master"
+          echo "Selected Version: 3.4 (hanwckf)"
+        else
+          REPO_URL="https://github.com/MeIsReallyBa/padavan-4.4.git"
+          REPO_BRANCH="main"
+          echo "Selected Version: 4.4 (MeIsReallyBa)"
+        fi
+        
+        TARGET_DEVICE="RM2100"
+        
+        # =======================================================
+        # 2. 拉取源码 & 准备 Toolchain
+        # =======================================================
+        echo "Cloning source code..."
         git clone --depth=1 --branch $REPO_BRANCH $REPO_URL $WORK_DIR
-
-    - name: Prepare Toolchain
-      run: |
+        
+        echo "Preparing Toolchain..."
         cd $WORK_DIR/toolchain-mipsel
-        # 两个仓库通常都包含预编译 toolchain 下载脚本，避免自行编译耗时过长
-        # 3.4 和 4.4 的 toolchain 不通用，必须使用源码自带的脚本下载
+        # 使用源码自带脚本下载 toolchain，这是最稳妥的
         sh dl_toolchain.sh
-
-    - name: Customize & Optimize Config (Performance & Clean)
-      run: |
-        cd $WORK_DIR/trunk/configs/templates
-        CONFIG_FILE="$TARGET_DEVICE.config"
         
-        echo "Starting customization for $CONFIG_FILE..."
-        
-        # ==========================================
-        # 1. 净化固件 (Remove Bloatware)
-        # ==========================================
-        # 禁用大部分插件，保留极其核心的功能
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=y/CONFIG_FIRMWARE_INCLUDE_ARIA=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_WGET=y/CONFIG_FIRMWARE_INCLUDE_WGET=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENVPN=y/CONFIG_FIRMWARE_INCLUDE_OPENVPN=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=y/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SSSERVER=y/CONFIG_FIRMWARE_INCLUDE_SSSERVER=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER=y/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CLIENT=y/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CLIENT=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CMD=y/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CMD=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_VLMCSD=y/CONFIG_FIRMWARE_INCLUDE_VLMCSD=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_TTYD=y/CONFIG_FIRMWARE_INCLUDE_TTYD=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_XRAY=y/CONFIG_FIRMWARE_INCLUDE_XRAY=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_V2RAY=y/CONFIG_FIRMWARE_INCLUDE_V2RAY=n/g' $CONFIG_FILE
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_TROJAN=y/CONFIG_FIRMWARE_INCLUDE_TROJAN=n/g' $CONFIG_FILE
-        # 甚至禁用 USB 应用（如果只需做纯路由）
-        # sed -i 's/CONFIG_FIRMWARE_ENABLE_USB=y/CONFIG_FIRMWARE_ENABLE_USB=n/g' $CONFIG_FILE
-        
-        # ==========================================
-        # 2. 性能优化 (Performance Tuning)
-        # ==========================================
-        # 强制开启硬件 NAT (Flow Offload)，这是 MT7621 性能的核心
-        sed -i 's/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=n/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y/g' $CONFIG_FILE
-        # 确保开启
-        if ! grep -q "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y" $CONFIG_FILE; then
-           echo "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y" >> $CONFIG_FILE
-        fi
-
-        # 优化内存管理，开启 ZRAM（如果支持）
-        if grep -q "CONFIG_FIRMWARE_INCLUDE_ZRAM" $CONFIG_FILE; then
-             sed -i 's/CONFIG_FIRMWARE_INCLUDE_ZRAM=n/CONFIG_FIRMWARE_INCLUDE_ZRAM=y/g' $CONFIG_FILE
-        fi
-
-        # 开启 OpenSSL 优化（通常会有助于 HTTPS 性能）
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' $CONFIG_FILE
-        
-        # ==========================================
-        # 3. 文件系统优化
-        # ==========================================
-        # 确保使用 squashfs 压缩比最高的 xz 算法（通常默认就是，但再次确认）
-        # Padavan 构建脚本通常自动处理，此处做日志确认即可
-        echo "Config optimization complete. Current configuration:"
-        grep "CONFIG_FIRMWARE_INCLUDE" $CONFIG_FILE | head -n 20
-
-    - name: Compile Firmware
-      run: |
+        # =======================================================
+        # 3. 配置文件修改 (Modifying Config)
+        # =======================================================
         cd $WORK_DIR/trunk
         
-        # 1. 清理旧构建环境
-        if [ -f ./clear_tree ]; then
-          ./clear_tree
-        fi
-        
-        # 2. 【修复核心】手动生成 .config 文件
-        # 这一步至关重要，强制将我们修改好的模板复制为构建所需的 .config
-        echo "Copying config file manually..."
-        cp -f configs/templates/$TARGET_DEVICE.config .config
-        
-        # 3. 验证 .config 是否存在以及关键修改是否生效 (用于排错)
-        if [ ! -f .config ]; then
-          echo "Error: .config file creation failed!"
+        # 定位模板文件
+        TEMPLATE_PATH="configs/templates/$TARGET_DEVICE.config"
+        if [ ! -f "$TEMPLATE_PATH" ]; then
+          echo "Error: Template config $TEMPLATE_PATH not found!"
+          ls -R configs/templates
           exit 1
         fi
-        echo "Verifying FlowOffload setting:"
+        
+        echo "Applying customization to $TEMPLATE_PATH..."
+        
+        # --- 净化插件 (Purge Plugins) ---
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=y/CONFIG_FIRMWARE_INCLUDE_ARIA=n/g' $TEMPLATE_PATH
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=y/CONFIG_FIRMWARE_INCLUDE_TRANSMISSION=n/g' $TEMPLATE_PATH
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_WGET=y/CONFIG_FIRMWARE_INCLUDE_WGET=n/g' $TEMPLATE_PATH
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENVPN=y/CONFIG_FIRMWARE_INCLUDE_OPENVPN=n/g' $TEMPLATE_PATH
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=y/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n/g' $TEMPLATE_PATH
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SSSERVER=y/CONFIG_FIRMWARE_INCLUDE_SSSERVER=n/g' $TEMPLATE_PATH
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER=y/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER=n/g' $TEMPLATE_PATH
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_XRAY=y/CONFIG_FIRMWARE_INCLUDE_XRAY=n/g' $TEMPLATE_PATH
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_V2RAY=y/CONFIG_FIRMWARE_INCLUDE_V2RAY=n/g' $TEMPLATE_PATH
+        sed -i 's/CONFIG_FIRMWARE_INCLUDE_TROJAN=y/CONFIG_FIRMWARE_INCLUDE_TROJAN=n/g' $TEMPLATE_PATH
+        
+        # --- 性能优化 (Performance) ---
+        # 强制开启 Flow Offload (硬件NAT)
+        sed -i 's/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=n/CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y/g' $TEMPLATE_PATH
+        # 如果文件中原本没有这行，强制追加
+        if ! grep -q "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD" $TEMPLATE_PATH; then
+           echo "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD=y" >> $TEMPLATE_PATH
+        fi
+        
+        # =======================================================
+        # 4. 生成 .config 并验证 (CRITICAL FIX)
+        # =======================================================
+        echo "Copying template to .config..."
+        cp -f $TEMPLATE_PATH .config
+        
+        # 强制检查：如果 .config 不存在，立刻报错停止，不浪费时间
+        if [ ! -f .config ]; then
+          echo "FATAL ERROR: .config file was not created successfully!"
+          exit 1
+        fi
+        
+        # 打印 .config 信息以供调试
+        echo "Debug: .config exists. Size info:"
+        ls -l .config
+        echo "Debug: Checking FlowOffload setting in final .config:"
         grep "CONFIG_FIRMWARE_ENABLE_FLOWOFFLOAD" .config
         
-        # 4. 【修复核心】直接运行构建
-        # 既然我们已经手动准备好了 .config，就直接调用核心构建脚本 ./build_firmware
-        # 这样可以避开 build_firmware_modify 脚本可能存在的路径或逻辑错误
+        # =======================================================
+        # 5. 执行编译
+        # =======================================================
+        echo "Starting Build Process..."
+        
+        # 警告：绝对不要在这里运行 ./clear_tree，它会删除我们刚生成的 .config
+        
+        # 直接调用核心构建脚本，跳过可能出错的 wrapper
         fakeroot ./build_firmware
-
-    - name: Organize Artifacts
-      id: organize
-      run: |
-        # 查找生成的 TRX 文件
-        FIRMWARE_PATH=$(find $WORK_DIR/trunk/images -name "*.trx" -type f | head -n 1)
-        if [ -f "$FIRMWARE_PATH" ]; then
-          echo "firmware_path=$FIRMWARE_PATH" >> $GITHUB_OUTPUT
-          FILE_NAME=$(basename "$FIRMWARE_PATH")
-          echo "file_name=$FILE_NAME" >> $GITHUB_OUTPUT
-          echo "Firmware found: $FIRMWARE_PATH"
-        else
-          echo "Error: Firmware file not found!"
-          exit 1
-        fi
-
-    - name: Upload Firmware
+        
+    - name: Organize & Upload Artifacts
       uses: actions/upload-artifact@v4
+      if: success()
       with:
-        name: Padavan-${{ inputs.target_version }}-${{ steps.organize.outputs.file_name }}
-        path: ${{ steps.organize.outputs.firmware_path }}
+        name: Padavan-RM2100-${{ inputs.target_version }}
+        path: ${{ github.workspace }}/padavan/trunk/images/*.trx
