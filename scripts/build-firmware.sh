@@ -9,6 +9,7 @@ PROFILE_FILE="${PROFILE_FILE:-$REPOSITORY/config/rm2100-3.4.config}"
 OUTPUT_DIR="${OUTPUT_DIR:-$REPOSITORY/dist}"
 CACHE_DIR="${CACHE_DIR:-$REPOSITORY/.cache/downloads}"
 PYTHON="${PYTHON:-python3}"
+CPU_FREQUENCY="${CPU_FREQUENCY:-900}"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -79,6 +80,9 @@ trap cleanup EXIT
 
 SOURCE_DIR="$BUILD_ROOT/rt-n56u"
 [[ ! -e "$SOURCE_DIR" ]] || die "build source path already exists: $SOURCE_DIR"
+RENDERED_PROFILE="$BUILD_ROOT/rm2100-3.4.config"
+"$PYTHON" "$REPOSITORY/tools/firmware.py" configure-profile \
+  "$PROFILE_FILE" "$RENDERED_PROFILE" --cpu-frequency "$CPU_FREQUENCY"
 mkdir -p -- "$CACHE_DIR"
 mkdir -p -- "$OUTPUT_DIR"
 if find "$OUTPUT_DIR" -mindepth 1 -print -quit | grep -q .; then
@@ -102,7 +106,7 @@ tar -xJf "$TOOLCHAIN_ARCHIVE" -C "$SOURCE_DIR/toolchain-mipsel/toolchain-3.4.x"
 cp -- "$OPENSSL_ARCHIVE" "$SOURCE_DIR/trunk/libs/libssl/openssl-1.1.1w.tar.gz"
 
 "$PYTHON" "$REPOSITORY/tools/firmware.py" prepare-source "$SOURCE_DIR" \
-  --profile "$PROFILE_FILE" \
+  --profile "$RENDERED_PROFILE" \
   --admin-password-file "$ADMIN_PASSWORD_FILE" \
   --wifi-password-file "$WIFI_PASSWORD_FILE"
 
@@ -117,21 +121,34 @@ mapfile -d '' images < <(find "$SOURCE_DIR/trunk/images" -maxdepth 1 -type f \
   || die "expected one RM2100 3.4 firmware image, found ${#images[@]}"
 
 image_name="$(basename -- "${images[0]}")"
-cp -- "${images[0]}" "$OUTPUT_DIR/$image_name"
+case "$CPU_FREQUENCY" in
+  bootloader) cpu_variant="cpu-bootloader" ;;
+  900) cpu_variant="cpu-900mhz" ;;
+  *) die "unsupported CPU frequency: $CPU_FREQUENCY" ;;
+esac
+bundle_image_name="${image_name%.trx}-${cpu_variant}.trx"
+cp -- "${images[0]}" "$OUTPUT_DIR/$bundle_image_name"
 cp -- "$LOCK_FILE" "$OUTPUT_DIR/build-lock.json"
-cp -- "$PROFILE_FILE" "$OUTPUT_DIR/rm2100-3.4.config"
+cp -- "$RENDERED_PROFILE" "$OUTPUT_DIR/rm2100-3.4.config"
+cp -- "$SOURCE_DIR/trunk/linux-3.4.x/.config" "$OUTPUT_DIR/kernel-3.4.config"
+
+"$PYTHON" "$REPOSITORY/tools/firmware.py" verify-kernel-config \
+  "$OUTPUT_DIR/kernel-3.4.config" \
+  --cpu-frequency "$CPU_FREQUENCY" \
+  --report "$OUTPUT_DIR/performance-profile.json"
 
 BUILDER_COMMIT="$(git -C "$REPOSITORY" rev-parse HEAD)"
-"$PYTHON" "$REPOSITORY/tools/firmware.py" verify-image "$OUTPUT_DIR/$image_name" \
+"$PYTHON" "$REPOSITORY/tools/firmware.py" verify-image "$OUTPUT_DIR/$bundle_image_name" \
   --manifest "$OUTPUT_DIR/manifest.json" \
-  --profile "$PROFILE_FILE" \
+  --profile "$RENDERED_PROFILE" \
   --source-commit "$SOURCE_COMMIT" \
   --builder-commit "$BUILDER_COMMIT" \
   --expected-timestamp "$SOURCE_DATE_EPOCH"
 
 (
   cd -- "$OUTPUT_DIR"
-  sha256sum "$image_name" manifest.json build-lock.json rm2100-3.4.config > SHA256SUMS
+  sha256sum "$bundle_image_name" manifest.json build-lock.json \
+    rm2100-3.4.config kernel-3.4.config performance-profile.json > SHA256SUMS
 )
 
 printf 'Firmware Bundle: %s\n' "$OUTPUT_DIR"

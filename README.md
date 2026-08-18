@@ -11,7 +11,9 @@
 启用：
 
 - RM2100 / MT7621，2.4 GHz `4.1` 与 5 GHz `5.0.5.1` 驱动
-- SFE 硬件转发加速
+- 2.4 GHz 与 5 GHz 默认使用澳大利亚 `AU` 地区码，由驱动按 AU 信道、DFS、功率限制和设备校准表工作
+- 构建时选择 MT7621 启动引导器时钟或内核强制 `900 MHz`
+- SFE 软件快速转发加速
 - IPv6、IPSet、中文 WebUI
 - 仅 HTTPS 的管理界面
 
@@ -19,7 +21,7 @@
 
 - SSH、Telnet、FTP、Samba、VPN、代理、下载器、ttyd
 - vlmcsd、socat、srelay、tcpdump、iperf3 等非核心程序
-- USB、超频与 CPU sleep 实验选项
+- USB 与 CPU sleep 实验选项
 
 完整策略见 [`config/rm2100-3.4.config`](config/rm2100-3.4.config)。任何未批准的 `=y` 选项都会让验证失败。
 
@@ -30,7 +32,9 @@
 - `FIRMWARE_ADMIN_PASSWORD`：16-64 位可打印 ASCII，不能使用通用默认值
 - `FIRMWARE_WIFI_PASSWORD`：16-63 位可打印 ASCII，且必须与管理密码不同
 
-运行 **Build RM2100 Padavan 3.4**。普通构建保持 `publish=false`，完成后下载 `rm2100-3.4-<run>-<attempt>` Firmware Bundle。公开仓库的 Actions 会忽略部署 Secrets，始终生成一次性测试凭据；这种产物只用于验证编译，不能部署。
+运行 **Build RM2100 Padavan 3.4**，在 `cpu_frequency` 选择 `900`（内核强制 900 MHz，默认）或 `bootloader`（保留设备启动引导器配置）。普通构建保持 `publish=false`，完成后下载 `rm2100-3.4-cpu-<mode>-<run>-<attempt>` Firmware Bundle；镜像文件名也包含 `cpu-900mhz` 或 `cpu-bootloader`。公开仓库的 Actions 会忽略部署 Secrets，始终生成一次性测试凭据；这种产物只用于验证编译，不能部署。
+
+上游 3.4 内核只实现了这两种模式，构建器不会伪造其他频率。900 MHz 模式会改写 MT7621 PLL，必须单独通过温度、冷启动和 72 小时压力验收。`AU` 地区码不会绕过驱动的法规限制或 EEPROM / SingleSKU 校准；仅应在符合当地法规的部署中使用。
 
 生产发布还需要配置 GitHub `production` Environment 的人工审批规则。workflow 会拒绝从公开仓库发布包含部署凭据的固件；在强制首次启动配置完成前，公开发布不是受支持的生产路径。
 
@@ -44,10 +48,11 @@ printf '%s' 'replace-with-strong-admin-password' > /tmp/rm2100-admin
 printf '%s' 'replace-with-strong-wifi-password' > /tmp/rm2100-wifi
 ADMIN_PASSWORD_FILE=/tmp/rm2100-admin \
 WIFI_PASSWORD_FILE=/tmp/rm2100-wifi \
+CPU_FREQUENCY=900 \
 bash scripts/build-firmware.sh
 ```
 
-默认输出在 `dist/`，包含固件、`manifest.json`、Source Lock、Firmware Profile 和 `SHA256SUMS`。
+`CPU_FREQUENCY` 只接受 `900` 或 `bootloader`。默认输出在 `dist/`，包含固件、`manifest.json`、Source Lock、实际 Firmware Profile、最终 `kernel-3.4.config`、`performance-profile.json` 和 `SHA256SUMS`。
 
 ## 首次部署
 

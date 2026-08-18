@@ -17,6 +17,7 @@ from pathlib import Path
 
 ALLOWED_ENABLED_OPTIONS = frozenset(
     {
+        "CONFIG_FIRMWARE_CPU_900MHZ",
         "CONFIG_FIRMWARE_ENABLE_IPV6",
         "CONFIG_FIRMWARE_INCLUDE_HTTPS",
         "CONFIG_FIRMWARE_INCLUDE_IPSET",
@@ -35,12 +36,26 @@ REQUIRED_PROFILE_VALUES = {
     "CONFIG_FIRMWARE_KERNEL_CONFIG": '"kernel-3.4.x-5.0.config"',
     "CONFIG_FIRMWARE_WIFI2_DRIVER": "4.1",
     "CONFIG_FIRMWARE_WIFI5_DRIVER": "5.0.5.1",
+    "CONFIG_FIRMWARE_WLAN_COUNTRY_CODE": '"AU"',
     "CONFIG_FIRMWARE_ENABLE_IPV6": "y",
     "CONFIG_FIRMWARE_INCLUDE_IPSET": "y",
     "CONFIG_FIRMWARE_INCLUDE_LANG_CN": "y",
     "CONFIG_FIRMWARE_INCLUDE_HTTPS": "y",
     "CONFIG_FIRMWARE_INCLUDE_OPENSSL_EC": "y",
     "CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE": "y",
+}
+CPU_PROFILE_OPTION = "CONFIG_FIRMWARE_CPU_900MHZ"
+CPU_FREQUENCIES = {"bootloader": "n", "900": "y"}
+KERNEL_BASELINE = {
+    "CONFIG_RALINK_MT7621": "y",
+    "CONFIG_SMP": "y",
+    "CONFIG_NR_CPUS": "4",
+    "CONFIG_HZ": "250",
+    "CONFIG_PREEMPT_NONE": "y",
+    "CONFIG_SHORTCUT_FE": "y",
+    "CONFIG_NF_CONNTRACK_EVENTS": "y",
+    "CONFIG_RPS": "y",
+    "CONFIG_XPS": "y",
 }
 IMAGE_HEADER = struct.Struct(">7I4B28sI")
 IMAGE_MAGIC = 0x27051956
@@ -81,7 +96,29 @@ def validate_profile(path: Path) -> dict[str, str]:
     for key, expected in REQUIRED_PROFILE_VALUES.items():
         if values.get(key) != expected:
             raise FirmwareError(f"{key} must be {expected}")
+    if values.get(CPU_PROFILE_OPTION) not in CPU_FREQUENCIES.values():
+        raise FirmwareError(f"{CPU_PROFILE_OPTION} must be n or y")
     return values
+
+
+def cpu_frequency_from_profile(values: dict[str, str]) -> str:
+    return "900" if values[CPU_PROFILE_OPTION] == "y" else "bootloader"
+
+
+def configure_profile(source: Path, output: Path, cpu_frequency: str) -> None:
+    validate_profile(source)
+    if cpu_frequency not in CPU_FREQUENCIES:
+        raise FirmwareError("CPU frequency must be bootloader or 900")
+    content = source.read_text(encoding="utf-8")
+    pattern = re.compile(rf"^{re.escape(CPU_PROFILE_OPTION)}=.*$", re.MULTILINE)
+    content, count = pattern.subn(
+        f"{CPU_PROFILE_OPTION}={CPU_FREQUENCIES[cpu_frequency]}", content
+    )
+    if count != 1:
+        raise FirmwareError(f"expected exactly one {CPU_PROFILE_OPTION}, found {count}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(content, encoding="utf-8", newline="\n")
+    validate_profile(output)
 
 
 def load_lock(path: Path) -> dict[str, object]:
@@ -163,7 +200,7 @@ def replace_exact_once(content: str, old: str, new: str, label: str) -> str:
 def prepare_source(
     source: Path, profile: Path, admin_password_file: Path, wifi_password_file: Path
 ) -> None:
-    validate_profile(profile)
+    profile_values = validate_profile(profile)
     admin_password, wifi_password = validate_credentials(
         admin_password_file, wifi_password_file
     )
@@ -178,6 +215,9 @@ def prepare_source(
     defaults_content = replace_c_define(
         defaults_content, "DEF_ROOT_PASSWORD", admin_password
     )
+    country_code = profile_values["CONFIG_FIRMWARE_WLAN_COUNTRY_CODE"].strip('"')
+    defaults_content = replace_c_define(defaults_content, "DEF_WLAN_2G_CC", country_code)
+    defaults_content = replace_c_define(defaults_content, "DEF_WLAN_5G_CC", country_code)
     defaults_content = replace_c_define(defaults_content, "DEF_WLAN_2G_PSK", wifi_password)
     defaults_content = replace_c_define(defaults_content, "DEF_WLAN_5G_PSK", wifi_password)
     defaults.write_text(defaults_content, encoding="utf-8", newline="\n")
@@ -261,6 +301,66 @@ def prepare_source(
         openssl_makefile.write_text(openssl_content, encoding="utf-8", newline="\n")
 
 
+def parse_kernel_config(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    unset_pattern = re.compile(r"^# (CONFIG_[A-Z0-9_]+) is not set$")
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw_line.strip()
+        unset = unset_pattern.fullmatch(line)
+        if unset:
+            key, value = unset.group(1), "n"
+        elif line.startswith("CONFIG_") and "=" in line:
+            key, value = line.split("=", 1)
+        else:
+            continue
+        if key in values:
+            raise FirmwareError(f"{path}:{line_number}: duplicate kernel option {key}")
+        values[key] = value
+    return values
+
+
+def verify_kernel_config(
+    path: Path, cpu_frequency: str, report: Path
+) -> dict[str, object]:
+    if cpu_frequency not in CPU_FREQUENCIES:
+        raise FirmwareError("CPU frequency must be bootloader or 900")
+    values = parse_kernel_config(path)
+    expected = dict(KERNEL_BASELINE)
+    expected["CONFIG_RALINK_MT7621_PLL900"] = CPU_FREQUENCIES[cpu_frequency]
+    failed = [
+        f"{key}={expected_value} (found {values.get(key, 'missing')})"
+        for key, expected_value in expected.items()
+        if values.get(key) != expected_value
+    ]
+    if failed:
+        raise FirmwareError(f"kernel performance baseline failed: {', '.join(failed)}")
+
+    document: dict[str, object] = {
+        "schema": 1,
+        "kernel": "3.4",
+        "cpu": {
+            "selection": cpu_frequency,
+            "forced_frequency_mhz": 900 if cpu_frequency == "900" else None,
+            "logical_cpus": 4,
+            "smp": True,
+        },
+        "scheduler": {"hz": 250, "preemption": "none"},
+        "network_acceleration": {
+            "sfe": True,
+            "conntrack_events": True,
+            "rps": True,
+            "xps": True,
+        },
+    }
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return document
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -277,7 +377,7 @@ def verify_image(
     builder_commit: str,
     expected_timestamp: int,
 ) -> dict[str, object]:
-    validate_profile(profile)
+    profile_values = validate_profile(profile)
     if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
         raise FirmwareError("source commit must be a full lowercase Git SHA")
     if not re.fullmatch(r"[0-9a-f]{40}", builder_commit):
@@ -333,6 +433,15 @@ def verify_image(
         "source": {"commit": source_commit},
         "builder": {"commit": builder_commit},
         "profile": {"sha256": sha256_file(profile)},
+        "cpu": {
+            "selection": cpu_frequency_from_profile(profile_values),
+            "forced_frequency_mhz": (
+                900 if cpu_frequency_from_profile(profile_values) == "900" else None
+            ),
+        },
+        "wireless": {
+            "country_code": profile_values["CONFIG_FIRMWARE_WLAN_COUNTRY_CODE"].strip('"')
+        },
         "artifact": {
             "filename": image.name,
             "size": len(content),
@@ -360,6 +469,11 @@ def build_parser() -> argparse.ArgumentParser:
     validate = subparsers.add_parser("validate-profile")
     validate.add_argument("profile", type=Path)
 
+    configure = subparsers.add_parser("configure-profile")
+    configure.add_argument("source", type=Path)
+    configure.add_argument("output", type=Path)
+    configure.add_argument("--cpu-frequency", required=True, choices=CPU_FREQUENCIES)
+
     credentials = subparsers.add_parser("validate-credentials")
     credentials.add_argument("admin_password_file", type=Path)
     credentials.add_argument("wifi_password_file", type=Path)
@@ -377,6 +491,11 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--source-commit", required=True)
     verify.add_argument("--builder-commit", required=True)
     verify.add_argument("--expected-timestamp", required=True, type=int)
+
+    verify_kernel = subparsers.add_parser("verify-kernel-config")
+    verify_kernel.add_argument("kernel_config", type=Path)
+    verify_kernel.add_argument("--cpu-frequency", required=True, choices=CPU_FREQUENCIES)
+    verify_kernel.add_argument("--report", required=True, type=Path)
 
     validate_lock = subparsers.add_parser("validate-lock")
     validate_lock.add_argument("lock", type=Path)
@@ -398,6 +517,10 @@ def main() -> int:
             validate_credentials(arguments.admin_password_file, arguments.wifi_password_file)
             print("valid provisioning credentials")
             return 0
+        if arguments.command == "configure-profile":
+            configure_profile(arguments.source, arguments.output, arguments.cpu_frequency)
+            print(f"configured profile: {arguments.output}")
+            return 0
         if arguments.command == "prepare-source":
             prepare_source(
                 arguments.source,
@@ -417,6 +540,12 @@ def main() -> int:
                 arguments.expected_timestamp,
             )
             print(f"verified firmware: {arguments.image}")
+            return 0
+        if arguments.command == "verify-kernel-config":
+            verify_kernel_config(
+                arguments.kernel_config, arguments.cpu_frequency, arguments.report
+            )
+            print(f"verified kernel config: {arguments.kernel_config}")
             return 0
         if arguments.command == "validate-lock":
             load_lock(arguments.lock)

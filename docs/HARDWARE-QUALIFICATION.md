@@ -10,6 +10,9 @@ Copy this file for each candidate. Do not edit the template to claim generic qua
 - GitHub Actions run:
 - Builder commit:
 - Upstream commit:
+- CPU mode (`900` or `bootloader`):
+- Observed CPU clock after boot:
+- Wi-Fi country code shown by both radios:
 - Router serial / MAC suffix:
 - Bootloader and recovery version:
 - Tester and date:
@@ -29,12 +32,15 @@ Copy this file for each candidate. Do not edit the template to claim generic qua
 - [ ] DHCP WAN, static WAN and PPPoE pass
 - [ ] IPv4 NAT, IPv6 routing, DNS and NTP pass
 - [ ] 2.4 GHz and 5 GHz association, WPA2 and reconnect pass
+- [ ] Both radios report AU and expose only AU-permitted channels
+- [ ] 5 GHz DFS channel detection, CAC and radar fallback behave correctly
 - [ ] Reset button, LEDs and all Ethernet ports pass
 
 ## Stability
 
 - [ ] 50 cold boot cycles complete without a boot loop
 - [ ] 72-hour mixed wired/wireless soak completes without crash
+- [ ] Selected CPU mode remains stable under simultaneous NAT and dual-band load
 - [ ] Repeated WAN reconnect and radio restart do not leak resources
 - [ ] NVRAM settings survive power cycles and factory reset clears them
 
@@ -51,6 +57,7 @@ Use the same client, server, cables, channel, distance and iperf3 parameters as 
 | 5 GHz TCP at 2 m | | | |
 | 2.4 GHz TCP at 2 m | | | |
 | CPU load during wired test | | | |
+| Observed CPU clock | | | |
 | Peak temperature during soak | | | |
 
 Pass criteria: wired TCP is at least 900 Mbit/s, packet loss is not worse than baseline, and no measured result regresses by more than 5% without an accepted explanation.

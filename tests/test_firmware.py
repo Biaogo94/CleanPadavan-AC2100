@@ -52,6 +52,8 @@ class ProfilePolicyTests(unittest.TestCase):
                     'CONFIG_FIRMWARE_KERNEL_CONFIG="kernel-3.4.x-5.0.config"',
                     "CONFIG_FIRMWARE_WIFI2_DRIVER=4.1",
                     "CONFIG_FIRMWARE_WIFI5_DRIVER=5.0.5.1",
+                    'CONFIG_FIRMWARE_WLAN_COUNTRY_CODE="AU"',
+                    "CONFIG_FIRMWARE_CPU_900MHZ=n",
                     "CONFIG_FIRMWARE_INCLUDE_SFE=y",
                     "CONFIG_FIRMWARE_ENABLE_IPV6=y",
                     "CONFIG_FIRMWARE_INCLUDE_IPSET=y",
@@ -148,6 +150,111 @@ class ProfilePolicyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class PerformancePolicyTests(unittest.TestCase):
+    def test_profile_can_render_each_supported_cpu_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            for frequency, expected in (("bootloader", "n"), ("900", "y")):
+                with self.subTest(frequency=frequency):
+                    output = directory / f"profile-{frequency}.config"
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            str(FIRMWARE_TOOL),
+                            "configure-profile",
+                            str(REPOSITORY / "config" / "rm2100-3.4.config"),
+                            str(output),
+                            "--cpu-frequency",
+                            frequency,
+                        ],
+                        cwd=REPOSITORY,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn(
+                        f"CONFIG_FIRMWARE_CPU_900MHZ={expected}",
+                        output.read_text(encoding="utf-8"),
+                    )
+
+    def test_kernel_config_must_match_the_requested_cpu_mode_and_baseline(self) -> None:
+        base = (
+            "CONFIG_RALINK_MT7621=y\n"
+            "CONFIG_SMP=y\n"
+            "CONFIG_NR_CPUS=4\n"
+            "CONFIG_HZ=250\n"
+            "CONFIG_PREEMPT_NONE=y\n"
+            "CONFIG_SHORTCUT_FE=y\n"
+            "CONFIG_NF_CONNTRACK_EVENTS=y\n"
+            "CONFIG_RPS=y\n"
+            "CONFIG_XPS=y\n"
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            for frequency, pll_line in (
+                ("bootloader", "# CONFIG_RALINK_MT7621_PLL900 is not set\n"),
+                ("900", "CONFIG_RALINK_MT7621_PLL900=y\n"),
+            ):
+                with self.subTest(frequency=frequency):
+                    kernel_config = directory / f"kernel-{frequency}.config"
+                    report = directory / f"performance-{frequency}.json"
+                    kernel_config.write_text(base + pll_line, encoding="utf-8")
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            str(FIRMWARE_TOOL),
+                            "verify-kernel-config",
+                            str(kernel_config),
+                            "--cpu-frequency",
+                            frequency,
+                            "--report",
+                            str(report),
+                        ],
+                        cwd=REPOSITORY,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    document = json.loads(report.read_text(encoding="utf-8"))
+                    self.assertEqual(document["cpu"]["selection"], frequency)
+                    self.assertTrue(document["network_acceleration"]["sfe"])
+
+    def test_kernel_config_rejects_a_cpu_mode_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            kernel_config = directory / "kernel.config"
+            report = directory / "performance.json"
+            kernel_config.write_text(
+                "CONFIG_RALINK_MT7621=y\n"
+                "CONFIG_RALINK_MT7621_PLL900=y\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(FIRMWARE_TOOL),
+                    "verify-kernel-config",
+                    str(kernel_config),
+                    "--cpu-frequency",
+                    "bootloader",
+                    "--report",
+                    str(report),
+                ],
+                cwd=REPOSITORY,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("CONFIG_RALINK_MT7621_PLL900=n", result.stderr)
+            self.assertFalse(report.exists())
+
+
 class ProvisioningPolicyTests(unittest.TestCase):
     def test_provisioning_rejects_the_universal_admin_password(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -184,6 +291,8 @@ class SourcePreparationTests(unittest.TestCase):
         defaults.parent.mkdir(parents=True)
         template.write_text("CONFIG_LINUXDIR=linux-3.4.x\n", encoding="utf-8")
         defaults.write_text(
+            '#define DEF_WLAN_2G_CC "CN"\n'
+            '#define DEF_WLAN_5G_CC "US"\n'
             '#define DEF_WLAN_2G_PSK "1234567890"\n'
             '#define DEF_WLAN_5G_PSK "1234567890"\n'
             '#define DEF_ROOT_PASSWORD "admin"\n',
@@ -229,6 +338,8 @@ class SourcePreparationTests(unittest.TestCase):
             defaults.write_text(
                 "\n".join(
                     (
+                        '#define DEF_WLAN_2G_CC "CN"',
+                        '#define DEF_WLAN_5G_CC "US"',
                         '#define DEF_WLAN_2G_PSK "1234567890"',
                         '#define DEF_WLAN_5G_PSK "1234567890"',
                         '#define DEF_ROOT_PASSWORD "admin"',
@@ -271,6 +382,8 @@ class SourcePreparationTests(unittest.TestCase):
             rendered_defaults = defaults.read_text(encoding="utf-8")
             self.assertIn(f'#define DEF_ROOT_PASSWORD\t"{admin_value}"', rendered_defaults)
             self.assertEqual(rendered_defaults.count(wifi_value), 2)
+            self.assertIn('#define DEF_WLAN_2G_CC\t"AU"', rendered_defaults)
+            self.assertIn('#define DEF_WLAN_5G_CC\t"AU"', rendered_defaults)
             self.assertNotIn(admin_value, result.stdout + result.stderr)
             self.assertNotIn(wifi_value, result.stdout + result.stderr)
 
@@ -284,6 +397,8 @@ class SourcePreparationTests(unittest.TestCase):
             shared.mkdir(parents=True)
             template.write_text("CONFIG_LINUXDIR=linux-3.4.x\n", encoding="utf-8")
             (shared / "defaults.h").write_text(
+                '#define DEF_WLAN_2G_CC "CN"\n'
+                '#define DEF_WLAN_5G_CC "US"\n'
                 '#define DEF_WLAN_2G_PSK "1234567890"\n'
                 '#define DEF_WLAN_5G_PSK "1234567890"\n'
                 '#define DEF_ROOT_PASSWORD "admin"\n',
@@ -458,6 +573,8 @@ class FirmwareVerificationTests(unittest.TestCase):
             document = json.loads(manifest.read_text(encoding="utf-8"))
             self.assertEqual(document["device"], "RM2100")
             self.assertEqual(document["kernel"], "3.4")
+            self.assertEqual(document["cpu"]["selection"], "bootloader")
+            self.assertEqual(document["wireless"]["country_code"], "AU")
             self.assertEqual(document["source"]["commit"], "23387b278a7cf728748af606760758f5d59d1451")
             self.assertEqual(document["artifact"]["size"], image.stat().st_size)
             self.assertEqual(len(document["artifact"]["sha256"]), 64)

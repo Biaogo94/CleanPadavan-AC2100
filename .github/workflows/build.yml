@@ -1,6 +1,8 @@
 name: Build RM2100 Padavan 3.4
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -14,11 +16,22 @@ on:
         description: Release version such as 20260818.1 (required when publishing)
         required: false
         type: string
+      cpu_frequency:
+        description: MT7621 CPU clock mode
+        required: true
+        default: "900"
+        type: choice
+        options:
+          - "900"
+          - bootloader
   schedule:
     - cron: "17 3 * * 0"
 
 permissions:
   contents: read
+
+env:
+  CPU_FREQUENCY: ${{ inputs.cpu_frequency || '900' }}
 
 concurrency:
   group: rm2100-3.4-${{ github.ref }}
@@ -27,7 +40,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out builder
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -98,7 +111,7 @@ jobs:
       - name: Upload verified bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: rm2100-3.4-${{ github.run_id }}-${{ github.run_attempt }}
+          name: rm2100-3.4-cpu-${{ env.CPU_FREQUENCY }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/firmware-bundle
           if-no-files-found: error
           compression-level: 0
@@ -131,7 +144,7 @@ jobs:
       - name: Download verified bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: rm2100-3.4-${{ github.run_id }}-${{ github.run_attempt }}
+          name: rm2100-3.4-cpu-${{ env.CPU_FREQUENCY }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist
 
       - name: Reverify release inputs
@@ -165,12 +178,12 @@ jobs:
             echo "::error::release_version must match YYYYMMDD.N"
             exit 1
           }
-          tag="rm2100-3.4-$RELEASE_VERSION"
+          tag="rm2100-3.4-cpu-$CPU_FREQUENCY-$RELEASE_VERSION"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "::error::release already exists: $tag"
             exit 1
           fi
           gh release create "$tag" dist/* \
             --target "$GITHUB_SHA" \
-            --title "RM2100 Padavan 3.4 $RELEASE_VERSION" \
-            --notes "Provisioned RM2100 Linux 3.4 Firmware Bundle. Verify SHA256SUMS and GitHub artifact attestation before deployment."
+            --title "RM2100 Padavan 3.4 CPU $CPU_FREQUENCY $RELEASE_VERSION" \
+            --notes "Provisioned RM2100 Linux 3.4 Firmware Bundle using CPU mode $CPU_FREQUENCY. Verify SHA256SUMS and GitHub artifact attestation before deployment."

@@ -12,7 +12,7 @@ class WorkflowPolicyTests(unittest.TestCase):
         workflow_paths = sorted(WORKFLOWS.glob("*.yml"))
         self.assertEqual(
             [path.name for path in workflow_paths],
-            ["build.yml", "ci.yml"],
+            ["build.yml"],
         )
 
         contents = "\n".join(path.read_text(encoding="utf-8") for path in workflow_paths)
@@ -20,6 +20,8 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertNotIn("MeIsReallyBa", contents)
         self.assertNotIn("padavan-4.4", contents)
         self.assertIn("scripts/build-firmware.sh", contents)
+        self.assertIn("cpu_frequency:", contents)
+        self.assertIn("CPU_FREQUENCY:", contents)
 
         uses_lines = re.findall(r"^\s*-?\s*uses:\s*([^\s#]+)", contents, re.MULTILINE)
         self.assertTrue(uses_lines)
@@ -34,6 +36,17 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("environment: production", build)
         self.assertIn('REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}', build)
         self.assertIn("Provisioned firmware must not be published from a public repository", build)
+
+    def test_firmware_policy_selects_au_and_verifies_the_cpu_variant(self) -> None:
+        profile = (REPOSITORY / "config" / "rm2100-3.4.config").read_text(encoding="utf-8")
+        build_script = (REPOSITORY / "scripts" / "build-firmware.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('CONFIG_FIRMWARE_WLAN_COUNTRY_CODE="AU"', profile)
+        self.assertIn("CONFIG_FIRMWARE_CPU_900MHZ=n", profile)
+        self.assertIn("configure-profile", build_script)
+        self.assertIn("verify-kernel-config", build_script)
+        self.assertIn("cpu-900mhz", build_script)
 
 
 if __name__ == "__main__":
