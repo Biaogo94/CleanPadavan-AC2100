@@ -29,11 +29,13 @@ The MT7615 5.0.5.1 SingleSKU transmit-power compensation path originally initial
 
 The locked upstream `mkimage` host tool originally parsed dotted kernel and filesystem versions with `%d` directly into `uint8_t` fields. That makes `sscanf` write an `int` through a one-byte pointer and can overwrite adjacent uImage tail fields. Source preparation changes the conversions to `%hhu` and checks their return counts. The resulting image is still independently checked for header CRC, data CRC, Linux 3.4, filesystem 3.9 and RM2100 identity.
 
+BusyBox 1.24 host generators also ignored reads, pipe creation, writes and output flush failures while producing Kconfig, applet and compressed-usage headers. Those results are now checked, so an incomplete generated file stops the build. The compiler gate rejects any remaining `warn_unused_result` diagnostic instead of treating generator I/O failures as legacy noise.
+
 ## Compiled userland correctness
 
 The default root filesystem includes the router startup process, 802.1X, PPTP relay, LAN authentication, UDP multicast proxy, wireless interface renaming, UPnP event handling and xl2tpd even when optional add-on features are disabled. Source preparation therefore fixes the high-risk warnings in those compiled paths instead of dismissing them as third-party noise: missing declarations are added, `isdigit` receives an unsigned byte, empty strings are checked by content, the PPTP interface expression is bounded, and intentional state-machine fallthrough and conditional close scopes are explicit.
 
-The complete build is captured with `LC_ALL=C` and checked after linking. `build-warning-policy.json` records the total legacy warning count and proves that the enforced high-risk categories are zero. The gate rejects implicit function declarations, format argument type mismatches, string-literal address comparisons, truncation, accidental fallthrough, array bounds, overflow, uninitialized values, use-after-free, null dereferences, incompatible pointer conversions and missing returns. Obsolete Autoconf diagnostics and known indentation warnings in host-side legacy compression tools remain visible but do not fail a build unless they enter an unsafe category.
+The complete build is captured with `LC_ALL=C` and checked after linking. `build-warning-policy.json` records the total legacy warning count and proves that the enforced high-risk categories are zero. The gate rejects implicit function declarations, format argument type mismatches, string-literal address comparisons, truncation, accidental fallthrough, array bounds, overflow, uninitialized values, ignored I/O results, use-after-free, null dereferences, incompatible pointer conversions and missing returns. Obsolete Autoconf diagnostics and known indentation warnings in host-side legacy compression tools remain visible but do not fail a build unless they enter an unsafe category.
 
 ## Measurement contract
 

@@ -386,6 +386,52 @@ class SourcePreparationTests(unittest.TestCase):
                 "[ucNSS - 1]) : "
                 "(pAd->CommonCfg.cTxPowerCompBackup[ucBandIdx][ucRateOffset][3]);\n",
             ),
+            "busybox_split": (
+                "trunk/user/busybox/busybox-1.24.x/scripts/basic/split-include.c",
+                "\t    fgets(old_line, buffer_size, fp_target);\n",
+            ),
+            "busybox_conf": (
+                "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/conf.c",
+                "\tcase ask_all:\n\t\tfflush(stdout);\n"
+                "\t\tfgets(line, 128, stdin);\n\t\treturn;\n"
+                "\t\tcase ask_all:\n\t\t\tfflush(stdout);\n"
+                "\t\t\tfgets(line, 128, stdin);\n\t\t\tstrip(line);\n",
+            ),
+            "busybox_mconf": (
+                "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/mconf.c",
+                "\tpipe(pipefd);\n"
+                "static void show_textbox(const char *title, const char *text, int r, int c)\n"
+                "{\n\tint fd;\n\n\tfd = creat(\".help.tmp\", 0777);\n"
+                "\twrite(fd, text, strlen(text));\n",
+            ),
+            "busybox_usage": (
+                "trunk/user/busybox/busybox-1.24.x/applets/usage.c",
+                "\tfor (i = 0; i < num_messages; i++)\n"
+                "\t\twrite(STDOUT_FILENO, usage_array[i].usage, "
+                "strlen(usage_array[i].usage) + 1);\n",
+            ),
+            "busybox_tables": (
+                "trunk/user/busybox/busybox-1.24.x/applets/applet_tables.c",
+                "\tif (argv[2]) {\n"
+                "\t\tchar line_old[80];\n"
+                "\t\tchar line_new[80];\n"
+                "\t\tFILE *fp;\n\n"
+                "\t\tline_old[0] = 0;\n"
+                "\t\tfp = fopen(argv[2], \"r\");\n"
+                "\t\tif (fp) {\n"
+                "\t\t\tfgets(line_old, sizeof(line_old), fp);\n"
+                "\t\t\tfclose(fp);\n"
+                "\t\t}\n"
+                "\t\tsprintf(line_new, \"#define NUM_APPLETS %u\\n\", NUM_APPLETS);\n"
+                "\t\tif (strcmp(line_old, line_new) != 0) {\n"
+                "\t\t\tfp = fopen(argv[2], \"w\");\n"
+                "\t\t\tif (!fp)\n"
+                "\t\t\t\treturn 1;\n"
+                "\t\t\tfputs(line_new, fp);\n"
+                "\t\t}\n"
+                "\t}\n\n"
+                "\treturn 0;\n}\n",
+            ),
         }
         paths: dict[str, Path] = {}
         for name, (relative_path, content) in contents.items():
@@ -626,6 +672,10 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertEqual(
                 document["wireless_hardening"]["invalid_spatial_stream_fallback"], 1
             )
+            self.assertEqual(document["host_build_hardening"]["exact_source_patches"], 7)
+            self.assertTrue(
+                document["host_build_hardening"]["generated_output_close_checked"]
+            )
             self.assertTrue(document["watchdog"]["default_enabled"])
 
     def test_prepare_source_hardens_default_userland_components(self) -> None:
@@ -671,6 +721,18 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertIn("ucNSS = ucNss - 1;", single_sku)
             self.assertIn("[ucRateOffset][ucNSS]", single_sku)
             self.assertNotIn("[ucRateOffset][ucNSS - 1]", single_sku)
+            split_include = paths["busybox_split"].read_text(encoding="utf-8")
+            self.assertIn("&& ferror(fp_target)", split_include)
+            busybox_conf = paths["busybox_conf"].read_text(encoding="utf-8")
+            self.assertEqual(busybox_conf.count("if (!fgets(line, 128, stdin))"), 2)
+            busybox_mconf = paths["busybox_mconf"].read_text(encoding="utf-8")
+            self.assertIn("if (pipe(pipefd))", busybox_mconf)
+            self.assertIn("if (write(fd, text, len) != len)", busybox_mconf)
+            busybox_usage = paths["busybox_usage"].read_text(encoding="utf-8")
+            self.assertIn("!= (ssize_t)len", busybox_usage)
+            busybox_tables = paths["busybox_tables"].read_text(encoding="utf-8")
+            self.assertIn("&& ferror(fp)", busybox_tables)
+            self.assertIn("if (fclose(stdout) != 0)", busybox_tables)
 
     def test_prepare_source_applies_the_xz_gettext_compatibility_fix(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -806,7 +868,9 @@ class BuildWarningPolicyTests(unittest.TestCase):
                 "mkimage.c: warning: format '%d' expects argument of type 'int *'\n"
                 "util.c: warning: output may be truncated [-Wformat-truncation=]\n"
                 "state.c: warning: this statement may fall through [-Wimplicit-fallthrough=]\n"
-                "queue.c: warning: value may be used uninitialized [-Wmaybe-uninitialized]\n",
+                "queue.c: warning: value may be used uninitialized [-Wmaybe-uninitialized]\n"
+                "generator.c: warning: ignoring return value of 'write' declared with "
+                "attribute 'warn_unused_result' [-Wunused-result]\n",
             )
 
             self.assertNotEqual(result.returncode, 0)
@@ -816,6 +880,7 @@ class BuildWarningPolicyTests(unittest.TestCase):
             self.assertIn("format-truncation=1", result.stderr)
             self.assertIn("implicit-fallthrough=1", result.stderr)
             self.assertIn("uninitialized=1", result.stderr)
+            self.assertIn("ignored-result=1", result.stderr)
             self.assertFalse(report.exists())
 
 

@@ -250,7 +250,115 @@ WIRELESS_SOURCE_PATCHES = (
         "MT7615 zero-based spatial-stream lookup",
     ),
 )
-SOURCE_PATCHES = USERLAND_SOURCE_PATCHES + WIRELESS_SOURCE_PATCHES
+HOST_BUILD_SOURCE_PATCHES = (
+    (
+        "trunk/user/busybox/busybox-1.24.x/scripts/basic/split-include.c",
+        "\t    fgets(old_line, buffer_size, fp_target);",
+        "\t    if (!fgets(old_line, buffer_size, fp_target) && ferror(fp_target))\n"
+        "\t\tERROR_EXIT(ptarget);",
+        "BusyBox split-include read result",
+    ),
+    (
+        "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/conf.c",
+        "\tcase ask_all:\n\t\tfflush(stdout);\n\t\tfgets(line, 128, stdin);\n\t\treturn;",
+        "\tcase ask_all:\n\t\tfflush(stdout);\n"
+        "\t\tif (!fgets(line, 128, stdin))\n\t\t\texit(1);\n\t\treturn;",
+        "BusyBox Kconfig value read result",
+    ),
+    (
+        "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/conf.c",
+        "\t\tcase ask_all:\n\t\t\tfflush(stdout);\n"
+        "\t\t\tfgets(line, 128, stdin);\n\t\t\tstrip(line);",
+        "\t\tcase ask_all:\n\t\t\tfflush(stdout);\n"
+        "\t\t\tif (!fgets(line, 128, stdin))\n\t\t\t\texit(1);\n"
+        "\t\t\tstrip(line);",
+        "BusyBox Kconfig choice read result",
+    ),
+    (
+        "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/mconf.c",
+        "\tpipe(pipefd);",
+        "\tif (pipe(pipefd))\n\t\t_exit(EXIT_FAILURE);",
+        "BusyBox menuconfig pipe result",
+    ),
+    (
+        "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/mconf.c",
+        "static void show_textbox(const char *title, const char *text, int r, int c)\n"
+        "{\n\tint fd;\n\n\tfd = creat(\".help.tmp\", 0777);\n"
+        "\twrite(fd, text, strlen(text));",
+        "static void show_textbox(const char *title, const char *text, int r, int c)\n"
+        "{\n\tint fd;\n\tint len = strlen(text);\n\n"
+        "\tfd = creat(\".help.tmp\", 0777);\n"
+        "\tif (write(fd, text, len) != len)\n\t\texit(1);",
+        "BusyBox menuconfig help write result",
+    ),
+    (
+        "trunk/user/busybox/busybox-1.24.x/applets/usage.c",
+        "\tfor (i = 0; i < num_messages; i++)\n"
+        "\t\twrite(STDOUT_FILENO, usage_array[i].usage, "
+        "strlen(usage_array[i].usage) + 1);",
+        "\tfor (i = 0; i < num_messages; i++) {\n"
+        "\t\tsize_t len = strlen(usage_array[i].usage) + 1;\n\n"
+        "\t\tif (write(STDOUT_FILENO, usage_array[i].usage, len) != "
+        "(ssize_t)len)\n\t\t\treturn 1;\n\t}",
+        "BusyBox usage data write result",
+    ),
+    (
+        "trunk/user/busybox/busybox-1.24.x/applets/applet_tables.c",
+        "\tif (argv[2]) {\n"
+        "\t\tchar line_old[80];\n"
+        "\t\tchar line_new[80];\n"
+        "\t\tFILE *fp;\n\n"
+        "\t\tline_old[0] = 0;\n"
+        "\t\tfp = fopen(argv[2], \"r\");\n"
+        "\t\tif (fp) {\n"
+        "\t\t\tfgets(line_old, sizeof(line_old), fp);\n"
+        "\t\t\tfclose(fp);\n"
+        "\t\t}\n"
+        "\t\tsprintf(line_new, \"#define NUM_APPLETS %u\\n\", NUM_APPLETS);\n"
+        "\t\tif (strcmp(line_old, line_new) != 0) {\n"
+        "\t\t\tfp = fopen(argv[2], \"w\");\n"
+        "\t\t\tif (!fp)\n"
+        "\t\t\t\treturn 1;\n"
+        "\t\t\tfputs(line_new, fp);\n"
+        "\t\t}\n"
+        "\t}\n\n"
+        "\treturn 0;\n}",
+        "\tif (argv[2]) {\n"
+        "\t\tchar line_old[80];\n"
+        "\t\tchar line_new[80];\n"
+        "\t\tFILE *fp;\n\n"
+        "\t\tline_old[0] = 0;\n"
+        "\t\tfp = fopen(argv[2], \"r\");\n"
+        "\t\tif (fp) {\n"
+        "\t\t\tif (!fgets(line_old, sizeof(line_old), fp) && ferror(fp)) {\n"
+        "\t\t\t\tfclose(fp);\n"
+        "\t\t\t\treturn 1;\n"
+        "\t\t\t}\n"
+        "\t\t\tif (fclose(fp) != 0)\n"
+        "\t\t\t\treturn 1;\n"
+        "\t\t}\n"
+        "\t\tsprintf(line_new, \"#define NUM_APPLETS %u\\n\", NUM_APPLETS);\n"
+        "\t\tif (strcmp(line_old, line_new) != 0) {\n"
+        "\t\t\tfp = fopen(argv[2], \"w\");\n"
+        "\t\t\tif (!fp)\n"
+        "\t\t\t\treturn 1;\n"
+        "\t\t\tif (fputs(line_new, fp) < 0) {\n"
+        "\t\t\t\tfclose(fp);\n"
+        "\t\t\t\treturn 1;\n"
+        "\t\t\t}\n"
+        "\t\t\tif (fclose(fp) != 0)\n"
+        "\t\t\t\treturn 1;\n"
+        "\t\t}\n"
+        "\t}\n\n"
+        "\tif (fclose(stdout) != 0)\n"
+        "\t\treturn 1;\n"
+        "\treturn 0;\n}",
+        "BusyBox applet table I/O results",
+    ),
+)
+SOURCE_PATCHES = (
+    USERLAND_SOURCE_PATCHES + WIRELESS_SOURCE_PATCHES + HOST_BUILD_SOURCE_PATCHES
+)
 SMP_SOURCE_CHECKS = (
     ("trunk/user/rc/rc.c", "\tset_cpu_affinity(is_ap_mode);", "CPU affinity startup"),
     (
@@ -305,6 +413,10 @@ HIGH_RISK_WARNING_PATTERNS = (
     ("null-dereference", re.compile(r"warning: .*null .*dereference")),
     ("incompatible-pointer-types", re.compile(r"warning: .*incompatible pointer type")),
     ("int-conversion", re.compile(r"warning: .*\[-Wint-conversion\]")),
+    (
+        "ignored-result",
+        re.compile(r"warning: ignoring return value of .*warn_unused_result"),
+    ),
     (
         "missing-return",
         re.compile(r"warning: control reaches end of non-void function"),
@@ -654,6 +766,12 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
             "spatial_stream_index_validated": True,
             "spatial_stream_range": [1, 4],
             "invalid_spatial_stream_fallback": 1,
+        },
+        "host_build_hardening": {
+            "component": "busybox-1.24.x",
+            "exact_source_patches": len(HOST_BUILD_SOURCE_PATCHES),
+            "checked_io_results": ["fgets", "fputs", "pipe", "write", "fclose"],
+            "generated_output_close_checked": True,
         },
         "watchdog": {"default_enabled": True},
     }

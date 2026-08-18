@@ -9,7 +9,7 @@ A successful GitHub Actions run creates a Release Candidate, not a Production Re
 | CPU baseline | `kernel-3.4.config` and `performance-profile.json` | Requested PLL mode, 4-way SMP, HZ=250, SFE, RPS and XPS all match |
 | Runtime fast path | `runtime-policy.json` and prepared-source verification | SFE mode 1 is the clean-NVRAM default; bridge bypass is off; module state and failure fallback are verified |
 | Wireless source safety | `runtime-policy.json` and compiler warning gate | MT7615 SingleSKU spatial-stream inputs map only to compensation indexes 0-3; no array-bounds warning remains |
-| Compiler warnings | `build-warning-policy.json` | Every enforced high-risk warning category is zero; remaining legacy warning count is recorded |
+| Compiler warnings | `build-warning-policy.json` | Every enforced high-risk warning category, including ignored generator I/O results, is zero; remaining legacy warning count is recorded |
 | Provisioning | Build log and deployment record | No universal defaults; secrets absent from logs |
 | Image integrity | `manifest.json` and `SHA256SUMS` | uImage header/data CRC, RM2100, 3.4, SHA-256 pass |
 | CI | GitHub Actions run URL | Tests and full firmware build pass |
