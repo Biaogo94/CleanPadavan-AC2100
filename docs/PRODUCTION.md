@@ -11,7 +11,7 @@ A successful GitHub Actions run creates a Release Candidate, not a Production Re
 | Wireless source safety | `runtime-policy.json` and compiler warning gate | MT7615 SingleSKU spatial-stream inputs map only to compensation indexes 0-3; no array-bounds warning remains |
 | Userland source safety | `runtime-policy.json` and compiler warning gate | HTTP ASCII length scope, HTTPS renegotiation policy and ebtables counter-file error propagation are verified |
 | Image build safety | `runtime-policy.json` and compiler warning gate | BusyBox generator I/O is checked; LZMA searches all characters; ambiguous host-tool control flow and non-literal formats are absent |
-| Compiler warnings | `build-warning-policy.json` | Every enforced high-risk warning category, including ignored I/O, ambiguous control flow and unsafe format use, is zero; remaining legacy warning count is recorded |
+| Compiler warnings | `build-warning-policy.json` | Every enforced high-risk warning category and the unknown-warning count are zero; each audited legacy category stays at or below its fixed limit |
 | Provisioning | Build log and deployment record | No universal defaults; secrets absent from logs |
 | Image integrity | `manifest.json` and `SHA256SUMS` | uImage header/data CRC, RM2100, 3.4, SHA-256 pass |
 | CI | GitHub Actions run URL | Tests and full firmware build pass |

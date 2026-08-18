@@ -1009,8 +1009,8 @@ class BuildWarningPolicyTests(unittest.TestCase):
             directory = Path(temporary_directory)
             result, report = self.run_warning_verification(
                 directory,
-                "configure.ac: warning: The macro `AC_TRY_COMPILE' is obsolete.\n"
-                "wireless.c:42: warning: inlining failed in call to 'scan': "
+                "configure.ac:524: warning: The macro `AC_TRY_COMPILE' is obsolete.\n"
+                "iwlist.c:410:1: warning: inlining failed in call to 'iw_print_gen_ie': "
                 "call is unlikely and code size would grow [-Winline]\n",
             )
 
@@ -1019,9 +1019,73 @@ class BuildWarningPolicyTests(unittest.TestCase):
             self.assertEqual(document["total_warnings"], 2)
             self.assertEqual(document["legacy_warnings"], 2)
             self.assertEqual(document["high_risk_warnings"], 0)
+            self.assertEqual(document["unknown_warnings"], 0)
+            self.assertEqual(
+                document["audited_legacy_categories"]["build-system-deprecation"], 1
+            )
+            self.assertEqual(
+                document["audited_legacy_categories"]["compiler-inline-decision"], 1
+            )
             self.assertTrue(
                 all(count == 0 for count in document["enforced_categories"].values())
             )
+
+    def test_build_log_accepts_each_audited_legacy_category(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            result, report = self.run_warning_verification(
+                directory,
+                "configure.ac:9: warning: The macro `AC_CONFIG_HEADER' is obsolete.\n"
+                "emp_ematch.y: warning: fix-its can be applied.  Rerun with option "
+                "'--update'. [-Wother]\n"
+                "trunk/linux-3.4.x/include/linux/types.h:13:2: warning: #warning "
+                '"Attempt to use kernel headers from user space, see '
+                'http://kernelnewbies.org/KernelHeaders" [-Wcpp]\n'
+                "iwevent.c:632:1: warning: inlining failed in call to "
+                "'handle_netlink_events.isra.1': --param large-stack-frame-growth "
+                "limit reached [-Winline]\n"
+                'misc-utils/flashcp.c:257:2: warning: #warning "Check for smaller '
+                'erase regions" [-Wcpp]\n'
+                "util-linux/umount.c:86:16: warning: typedef 'bug' locally defined "
+                "but not used [-Wunused-local-typedefs]\n"
+                "libtool: warning: relinking 'libblkid.la'\n",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            document = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(document["legacy_warnings"], 7)
+            self.assertEqual(document["unknown_warnings"], 0)
+            self.assertTrue(
+                all(
+                    count == 1
+                    for count in document["audited_legacy_categories"].values()
+                )
+            )
+
+    def test_build_log_rejects_an_unknown_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            result, report = self.run_warning_verification(
+                directory,
+                "new-component.c:17: warning: implementation-defined behavior\n",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("unexpected compiler warnings: count=1", result.stderr)
+            self.assertFalse(report.exists())
+
+    def test_build_log_rejects_a_legacy_category_above_its_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            result, report = self.run_warning_verification(
+                directory,
+                "libtool: warning: relinking 'libblkid.la'\n"
+                "libtool: warning: relinking 'libblkid.la'\n",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("libtool-relink=2>1", result.stderr)
+            self.assertFalse(report.exists())
 
     def test_build_log_rejects_high_risk_compiler_warnings(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

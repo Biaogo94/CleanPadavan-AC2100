@@ -715,6 +715,77 @@ HIGH_RISK_WARNING_PATTERNS = (
         re.compile(r'warning: ".+" redefined'),
     ),
 )
+AUDITED_LEGACY_WARNING_PATTERNS = (
+    (
+        "build-system-deprecation",
+        re.compile(
+            r"^(?:configure\.(?:ac|in):\d+|aclocal\.m4:\d+|Makefile\.am:\d+|"
+            r"automake|aclocal|autoheader): warning: (?:"
+            r"The macro `[A-Z0-9_]+' is obsolete\.|"
+            r"this file was generated for autoconf 2\.(?:63|69)\.|"
+            r"autoconf input should be named 'configure\.ac', not 'configure\.in'|"
+            r"AM_INIT_AUTOMAKE: two- and three-arguments forms are deprecated\."
+            r"(?:  For more info, see:)?|"
+            r"AC_OUTPUT should be used without arguments\.|"
+            r"'AM_CONFIG_HEADER': this macro is obsolete\.|"
+            r"name 'aux' is reserved on W32 and DOS platforms|"
+            r"'INCLUDES' is the old name for 'AM_CPPFLAGS' \(or '\*_CPPFLAGS'\)"
+            r")$"
+        ),
+        90,
+    ),
+    (
+        "parser-generator-deprecation",
+        re.compile(
+            r"^emp_ematch\.y(?::\d+\.\d+-\d+)?: warning: (?:"
+            r"deprecated directive: .+ \[-Wdeprecated\]|"
+            r"fix-its can be applied\.  Rerun with option '--update'\. \[-Wother\]"
+            r")$"
+        ),
+        3,
+    ),
+    (
+        "kernel-user-header-marker",
+        re.compile(
+            r"^.*linux-3\.4\.x/include/linux/types\.h:13:2: warning: #warning "
+            r'"Attempt to use kernel headers from user space, see '
+            r'http://kernelnewbies\.org/KernelHeaders" \[-Wcpp\]$'
+        ),
+        4,
+    ),
+    (
+        "compiler-inline-decision",
+        re.compile(
+            r"^(?:iwlist\.c:410:1: warning: inlining failed in call to "
+            r"'iw_print_gen_ie': call is unlikely and code size would grow|"
+            r"iwevent\.c:632:1: warning: inlining failed in call to "
+            r"'handle_netlink_events\.isra\.1': --param large-stack-frame-growth "
+            r"limit reached) \[-Winline\]$"
+        ),
+        3,
+    ),
+    (
+        "flashcp-review-marker",
+        re.compile(
+            r'^misc-utils/flashcp\.c:257:2: warning: #warning "Check for smaller '
+            r'erase regions" \[-Wcpp\]$'
+        ),
+        1,
+    ),
+    (
+        "busybox-compile-assertion",
+        re.compile(
+            r"^util-linux/umount\.c:86:16: warning: typedef 'bug' locally defined "
+            r"but not used \[-Wunused-local-typedefs\]$"
+        ),
+        1,
+    ),
+    (
+        "libtool-relink",
+        re.compile(r"^libtool: warning: relinking 'libblkid\.la'$"),
+        1,
+    ),
+)
 
 
 class FirmwareError(ValueError):
@@ -1099,12 +1170,43 @@ def verify_build_log(path: Path, report: Path) -> dict[str, object]:
         summary = ", ".join(f"{name}={count}" for name, count in failed.items())
         raise FirmwareError(f"forbidden compiler warnings: {summary}")
 
+    legacy_counts = {
+        name: sum(1 for line in warning_lines if pattern.search(line))
+        for name, pattern, _maximum in AUDITED_LEGACY_WARNING_PATTERNS
+    }
+    unexpected = [
+        line
+        for line in warning_lines
+        if not any(pattern.search(line) for _, pattern, _ in AUDITED_LEGACY_WARNING_PATTERNS)
+    ]
+    if unexpected:
+        examples = "; ".join(unexpected[:3])
+        raise FirmwareError(
+            f"unexpected compiler warnings: count={len(unexpected)}; {examples}"
+        )
+    legacy_limits = {
+        name: maximum for name, _pattern, maximum in AUDITED_LEGACY_WARNING_PATTERNS
+    }
+    exceeded = {
+        name: count
+        for name, count in legacy_counts.items()
+        if count > legacy_limits[name]
+    }
+    if exceeded:
+        summary = ", ".join(
+            f"{name}={count}>{legacy_limits[name]}" for name, count in exceeded.items()
+        )
+        raise FirmwareError(f"legacy compiler warning limits exceeded: {summary}")
+
     document: dict[str, object] = {
         "schema": 1,
         "total_warnings": len(warning_lines),
         "high_risk_warnings": 0,
         "legacy_warnings": len(warning_lines),
+        "unknown_warnings": 0,
         "enforced_categories": category_counts,
+        "audited_legacy_categories": legacy_counts,
+        "audited_legacy_limits": legacy_limits,
     }
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(
