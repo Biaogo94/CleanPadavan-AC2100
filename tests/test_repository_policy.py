@@ -46,6 +46,8 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("Acquire::http::Timeout=30", build)
         self.assertIn("Acquire::https::Timeout=30", build)
         self.assertIn("Dpkg::Lock::Timeout=60", build)
+        self.assertIn("/etc/apt/apt-mirrors.txt", build)
+        self.assertIn("https://archive.ubuntu.com/ubuntu", build)
 
     def test_firmware_policy_selects_au_and_verifies_the_cpu_variant(self) -> None:
         profile = (REPOSITORY / "config" / "rm2100-3.4.config").read_text(encoding="utf-8")
