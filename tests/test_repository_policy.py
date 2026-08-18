@@ -42,10 +42,15 @@ class WorkflowPolicyTests(unittest.TestCase):
         build_script = (REPOSITORY / "scripts" / "build-firmware.sh").read_text(
             encoding="utf-8"
         )
+        workflow = (WORKFLOWS / "build.yml").read_text(encoding="utf-8")
         self.assertIn('CONFIG_FIRMWARE_WLAN_COUNTRY_CODE="AU"', profile)
         self.assertIn("CONFIG_FIRMWARE_CPU_900MHZ=n", profile)
+        self.assertIn('CPU_FREQUENCY="${CPU_FREQUENCY:-bootloader}"', build_script)
+        self.assertIn("inputs.cpu_frequency || 'bootloader'", workflow)
         self.assertIn("configure-profile", build_script)
+        self.assertIn("verify-source-policy", build_script)
         self.assertIn("verify-kernel-config", build_script)
+        self.assertIn("runtime-policy.json", build_script)
         self.assertIn("cpu-900mhz", build_script)
 
 

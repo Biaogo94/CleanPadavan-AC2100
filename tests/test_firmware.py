@@ -408,7 +408,8 @@ class SourcePreparationTests(unittest.TestCase):
             defaults.write_text(
                 '\t{ "http_access", "0" },\n'
                 '\t{ "http_proto", "0" },\n'
-                '\t{ "sshd_enable", "1" },\n',
+                '\t{ "sshd_enable", "1" },\n'
+                '\t{ "sfe_enable", "0" },\n',
                 encoding="utf-8",
             )
             admin_password = directory / "admin-password"
@@ -440,6 +441,86 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertIn('{ "http_access", "2" }', rendered_defaults)
             self.assertIn('{ "http_proto", "1" }', rendered_defaults)
             self.assertIn('{ "sshd_enable", "0" }', rendered_defaults)
+            self.assertIn('{ "sfe_enable", "1" }', rendered_defaults)
+
+    def test_prepare_source_hardens_the_sfe_runtime_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            source, admin_password, wifi_password = self.create_base_source(directory)
+            shared = source / "trunk" / "user" / "shared"
+            defaults = shared / "defaults.c"
+            defaults.write_text(
+                '\t{ "http_access", "0" },\n'
+                '\t{ "http_proto", "0" },\n'
+                '\t{ "sshd_enable", "1" },\n'
+                '\t{ "sfe_enable", "0" },\n'
+                '\t{ "watchdog_cpu", "1" },\n',
+                encoding="utf-8",
+            )
+            network = source / "trunk" / "user" / "rc" / "net.c"
+            network.parent.mkdir(parents=True)
+            network.write_text(
+                '#if defined (USE_SFE)\n'
+                '\tint sfe_enable = nvram_get_int("sfe_enable");\n'
+                '\tint sfe_loaded = is_module_loaded("fast_classifier");\n\n'
+                '\tif (sfe_loaded && !sfe_enable) {\n'
+                '\t\tmodule_smart_unload("fast_classifier", 1);\n'
+                '\t\tdoSystem("echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal");\n'
+                '\t\tdoSystem("echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_no_window_check");\n'
+                '\t\tsfe_loaded = 0;\n'
+                '\t}\n'
+                '\tif (sfe_enable && !sfe_loaded) {\n'
+                '\t\tdoSystem("echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal");\n'
+                '\t\tdoSystem("echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_no_window_check");\n'
+                '\t\tmodule_smart_load("fast_classifier", NULL);\n'
+                '\t\tsfe_loaded = 1;\n'
+                '\t}\n'
+                '\tif (sfe_loaded) {\n'
+                '\t\tif (sfe_enable == 1)\n'
+                '\t\t\tdoSystem("echo 0 > /sys/fast_classifier/skip_to_bridge_ingress");\n'
+                '\t\telse if (sfe_enable == 2)\n'
+                '\t\t\tdoSystem("echo 1 > /sys/fast_classifier/skip_to_bridge_ingress");\n'
+                '\t}\n'
+                '#endif\n',
+                encoding="utf-8",
+            )
+
+            result = self.run_preparation(source, admin_password, wifi_password)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rendered_defaults = defaults.read_text(encoding="utf-8")
+            rendered_network = network.read_text(encoding="utf-8")
+            self.assertIn('{ "sfe_enable", "1" }', rendered_defaults)
+            self.assertNotIn("sfe_loaded = 0;", rendered_network)
+            self.assertEqual(
+                rendered_network.count('sfe_loaded = is_module_loaded("fast_classifier");'),
+                3,
+            )
+            self.assertIn("SFE module load failed", rendered_network)
+            self.assertIn("SFE module unload failed", rendered_network)
+
+            report = directory / "runtime-policy.json"
+            verification = subprocess.run(
+                [
+                    sys.executable,
+                    str(FIRMWARE_TOOL),
+                    "verify-source-policy",
+                    str(source),
+                    "--report",
+                    str(report),
+                ],
+                cwd=REPOSITORY,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(verification.returncode, 0, verification.stderr)
+            document = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(document["sfe"]["default_mode"], 1)
+            self.assertFalse(document["sfe"]["bridge_ingress_bypass"])
+            self.assertTrue(document["sfe"]["module_state_rechecked"])
+            self.assertTrue(document["watchdog"]["default_enabled"])
 
     def test_prepare_source_applies_the_xz_gettext_compatibility_fix(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

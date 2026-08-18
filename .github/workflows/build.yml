@@ -19,11 +19,11 @@ on:
       cpu_frequency:
         description: MT7621 CPU clock mode
         required: true
-        default: "900"
+        default: bootloader
         type: choice
         options:
-          - "900"
           - bootloader
+          - "900"
   schedule:
     - cron: "17 3 * * 0"
 
@@ -31,7 +31,7 @@ permissions:
   contents: read
 
 env:
-  CPU_FREQUENCY: ${{ inputs.cpu_frequency || '900' }}
+  CPU_FREQUENCY: ${{ inputs.cpu_frequency || 'bootloader' }}
 
 concurrency:
   group: rm2100-3.4-${{ github.ref }}

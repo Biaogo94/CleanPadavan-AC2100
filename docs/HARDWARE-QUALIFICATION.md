@@ -12,6 +12,7 @@ Copy this file for each candidate. Do not edit the template to claim generic qua
 - Upstream commit:
 - CPU mode (`900` or `bootloader`):
 - Observed CPU clock after boot:
+- SFE mode / `fast_classifier` loaded:
 - Wi-Fi country code shown by both radios:
 - Router serial / MAC suffix:
 - Bootloader and recovery version:
@@ -31,9 +32,10 @@ Copy this file for each candidate. Do not edit the template to claim generic qua
 - [ ] Default SSH, Telnet and ttyd listeners are absent
 - [ ] DHCP WAN, static WAN and PPPoE pass
 - [ ] IPv4 NAT, IPv6 routing, DNS and NTP pass
+- [ ] SFE mode 1 loads `fast_classifier`; bridge ingress bypass reports `0`
+- [ ] Twenty SFE disable/enable cycles under active traffic complete without stale state or a load/unload failure log
 - [ ] 2.4 GHz and 5 GHz association, WPA2 and reconnect pass
-- [ ] Both radios report AU and expose only AU-permitted channels
-- [ ] 5 GHz DFS channel detection, CAC and radar fallback behave correctly
+- [ ] Both radios report AU; 2.4 GHz exposes 1-13 and 5 GHz exposes 36-48/149-165
 - [ ] Reset button, LEDs and all Ethernet ports pass
 
 ## Stability
@@ -52,15 +54,16 @@ Use the same client, server, cables, channel, distance and iperf3 parameters as 
 
 | Test | Baseline | Candidate | Pass |
 | --- | ---: | ---: | :---: |
-| Wired LAN-WAN TCP, SFE enabled | | | |
+| Wired LAN-WAN TCP, SFE disabled reference | | | |
+| Wired LAN-WAN TCP, SFE mode 1 | | | |
 | Wired LAN-WAN UDP loss | | | |
 | 5 GHz TCP at 2 m | | | |
 | 2.4 GHz TCP at 2 m | | | |
-| CPU load during wired test | | | |
+| CPU load, SFE disabled / mode 1 | | | |
 | Observed CPU clock | | | |
 | Peak temperature during soak | | | |
 
-Pass criteria: wired TCP is at least 900 Mbit/s, packet loss is not worse than baseline, and no measured result regresses by more than 5% without an accepted explanation.
+Pass criteria: SFE mode 1 wired TCP is at least 900 Mbit/s, packet loss is not worse than baseline, and no measured result regresses by more than 5% without an accepted explanation. The 900 MHz CPU image additionally needs a documented temperature margin over the bootloader-clock image; throughput alone is not approval.
 
 ## Decision
 

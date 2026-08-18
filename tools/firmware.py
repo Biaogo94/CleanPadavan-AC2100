@@ -61,6 +61,57 @@ IMAGE_HEADER = struct.Struct(">7I4B28sI")
 IMAGE_MAGIC = 0x27051956
 MIN_IMAGE_SIZE = 4 * 1024 * 1024
 MAX_IMAGE_SIZE = 16 * 1024 * 1024
+SFE_DEFAULT_DISABLED = '\t{ "sfe_enable", "0" },'
+SFE_DEFAULT_ENABLED = '\t{ "sfe_enable", "1" },'
+SFE_RUNTIME_ORIGINAL = """\
+\tif (sfe_loaded && !sfe_enable) {
+\t\tmodule_smart_unload("fast_classifier", 1);
+\t\tdoSystem("echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal");
+\t\tdoSystem("echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_no_window_check");
+\t\tsfe_loaded = 0;
+\t}
+\tif (sfe_enable && !sfe_loaded) {
+\t\tdoSystem("echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal");
+\t\tdoSystem("echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_no_window_check");
+\t\tmodule_smart_load("fast_classifier", NULL);
+\t\tsfe_loaded = 1;
+\t}
+\tif (sfe_loaded) {
+\t\tif (sfe_enable == 1)
+\t\t\tdoSystem("echo 0 > /sys/fast_classifier/skip_to_bridge_ingress");
+\t\telse if (sfe_enable == 2)
+\t\t\tdoSystem("echo 1 > /sys/fast_classifier/skip_to_bridge_ingress");
+\t}
+"""
+SFE_RUNTIME_HARDENED = """\
+\tif (sfe_loaded && !sfe_enable) {
+\t\tmodule_smart_unload("fast_classifier", 1);
+\t\tsfe_loaded = is_module_loaded("fast_classifier");
+\t\tif (!sfe_loaded) {
+\t\t\tdoSystem("echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal");
+\t\t\tdoSystem("echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_no_window_check");
+\t\t} else {
+\t\t\tlogmessage(LOGNAME, "%s", "SFE module unload failed");
+\t\t}
+\t}
+\tif (sfe_enable && !sfe_loaded) {
+\t\tdoSystem("echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal");
+\t\tdoSystem("echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_no_window_check");
+\t\tmodule_smart_load("fast_classifier", NULL);
+\t\tsfe_loaded = is_module_loaded("fast_classifier");
+\t\tif (!sfe_loaded) {
+\t\t\tdoSystem("echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal");
+\t\t\tdoSystem("echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_no_window_check");
+\t\t\tlogmessage(LOGNAME, "%s", "SFE module load failed");
+\t\t}
+\t}
+\tif (sfe_loaded) {
+\t\tif (sfe_enable == 1)
+\t\t\tdoSystem("echo 0 > /sys/fast_classifier/skip_to_bridge_ingress");
+\t\telse if (sfe_enable == 2)
+\t\t\tdoSystem("echo 1 > /sys/fast_classifier/skip_to_bridge_ingress");
+\t}
+"""
 
 
 class FirmwareError(ValueError):
@@ -243,7 +294,24 @@ def prepare_source(
             '{ "sshd_enable", "0" }',
             "sshd_enable default",
         )
+        runtime_content = replace_exact_once(
+            runtime_content,
+            SFE_DEFAULT_DISABLED,
+            SFE_DEFAULT_ENABLED,
+            "SFE runtime default",
+        )
         runtime_defaults.write_text(runtime_content, encoding="utf-8", newline="\n")
+
+    runtime_network = source / "trunk" / "user" / "rc" / "net.c"
+    if runtime_network.is_file():
+        network_content = runtime_network.read_text(encoding="utf-8")
+        network_content = replace_exact_once(
+            network_content,
+            SFE_RUNTIME_ORIGINAL,
+            SFE_RUNTIME_HARDENED,
+            "SFE runtime state handling",
+        )
+        runtime_network.write_text(network_content, encoding="utf-8", newline="\n")
 
     xz_makefile = source / "trunk" / "tools" / "mksquashfs_xz" / "Makefile"
     if xz_makefile.is_file():
@@ -299,6 +367,44 @@ def prepare_source(
             "OpenSSL extraction patch recipe",
         )
         openssl_makefile.write_text(openssl_content, encoding="utf-8", newline="\n")
+
+
+def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
+    runtime_defaults = source / "trunk" / "user" / "shared" / "defaults.c"
+    runtime_network = source / "trunk" / "user" / "rc" / "net.c"
+    if not runtime_defaults.is_file() or not runtime_network.is_file():
+        raise FirmwareError("prepared source is missing the RM2100 runtime policy files")
+
+    defaults_content = runtime_defaults.read_text(encoding="utf-8")
+    network_content = runtime_network.read_text(encoding="utf-8")
+    checks = {
+        "SFE default mode": defaults_content.count(SFE_DEFAULT_ENABLED) == 1
+        and SFE_DEFAULT_DISABLED not in defaults_content,
+        "CPU watchdog default": defaults_content.count('\t{ "watchdog_cpu", "1" },') == 1,
+        "SFE module state handling": network_content.count(SFE_RUNTIME_HARDENED) == 1
+        and SFE_RUNTIME_ORIGINAL not in network_content,
+    }
+    failed = [name for name, passed in checks.items() if not passed]
+    if failed:
+        raise FirmwareError(f"runtime source policy failed: {', '.join(failed)}")
+
+    document: dict[str, object] = {
+        "schema": 1,
+        "sfe": {
+            "default_mode": 1,
+            "bridge_ingress_bypass": False,
+            "module_state_rechecked": True,
+            "conntrack_fallback_on_load_failure": True,
+        },
+        "watchdog": {"default_enabled": True},
+    }
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return document
 
 
 def parse_kernel_config(path: Path) -> dict[str, str]:
@@ -484,6 +590,10 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--admin-password-file", required=True, type=Path)
     prepare.add_argument("--wifi-password-file", required=True, type=Path)
 
+    verify_source = subparsers.add_parser("verify-source-policy")
+    verify_source.add_argument("source", type=Path)
+    verify_source.add_argument("--report", required=True, type=Path)
+
     verify = subparsers.add_parser("verify-image")
     verify.add_argument("image", type=Path)
     verify.add_argument("--manifest", required=True, type=Path)
@@ -540,6 +650,10 @@ def main() -> int:
                 arguments.expected_timestamp,
             )
             print(f"verified firmware: {arguments.image}")
+            return 0
+        if arguments.command == "verify-source-policy":
+            verify_source_policy(arguments.source, arguments.report)
+            print(f"verified runtime source policy: {arguments.source}")
             return 0
         if arguments.command == "verify-kernel-config":
             verify_kernel_config(

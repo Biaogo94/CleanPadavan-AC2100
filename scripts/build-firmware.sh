@@ -9,7 +9,7 @@ PROFILE_FILE="${PROFILE_FILE:-$REPOSITORY/config/rm2100-3.4.config}"
 OUTPUT_DIR="${OUTPUT_DIR:-$REPOSITORY/dist}"
 CACHE_DIR="${CACHE_DIR:-$REPOSITORY/.cache/downloads}"
 PYTHON="${PYTHON:-python3}"
-CPU_FREQUENCY="${CPU_FREQUENCY:-900}"
+CPU_FREQUENCY="${CPU_FREQUENCY:-bootloader}"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -109,6 +109,8 @@ cp -- "$OPENSSL_ARCHIVE" "$SOURCE_DIR/trunk/libs/libssl/openssl-1.1.1w.tar.gz"
   --profile "$RENDERED_PROFILE" \
   --admin-password-file "$ADMIN_PASSWORD_FILE" \
   --wifi-password-file "$WIFI_PASSWORD_FILE"
+"$PYTHON" "$REPOSITORY/tools/firmware.py" verify-source-policy "$SOURCE_DIR" \
+  --report "$BUILD_ROOT/runtime-policy.json"
 
 (
   cd -- "$SOURCE_DIR/trunk"
@@ -131,6 +133,7 @@ cp -- "${images[0]}" "$OUTPUT_DIR/$bundle_image_name"
 cp -- "$LOCK_FILE" "$OUTPUT_DIR/build-lock.json"
 cp -- "$RENDERED_PROFILE" "$OUTPUT_DIR/rm2100-3.4.config"
 cp -- "$SOURCE_DIR/trunk/linux-3.4.x/.config" "$OUTPUT_DIR/kernel-3.4.config"
+cp -- "$BUILD_ROOT/runtime-policy.json" "$OUTPUT_DIR/runtime-policy.json"
 
 "$PYTHON" "$REPOSITORY/tools/firmware.py" verify-kernel-config \
   "$OUTPUT_DIR/kernel-3.4.config" \
@@ -148,7 +151,8 @@ BUILDER_COMMIT="$(git -C "$REPOSITORY" rev-parse HEAD)"
 (
   cd -- "$OUTPUT_DIR"
   sha256sum "$bundle_image_name" manifest.json build-lock.json \
-    rm2100-3.4.config kernel-3.4.config performance-profile.json > SHA256SUMS
+    rm2100-3.4.config kernel-3.4.config performance-profile.json \
+    runtime-policy.json > SHA256SUMS
 )
 
 printf 'Firmware Bundle: %s\n' "$OUTPUT_DIR"
