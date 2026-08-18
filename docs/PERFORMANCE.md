@@ -23,6 +23,8 @@ Hardware NAT remains disabled by default for the MT7615 path, matching upstream 
 - The 2.4 GHz driver retains 20/40 MHz, WMM, aggregation and the board's 2x2 layout.
 - The 128 MiB memory policy and 16,384-connection default are unchanged. Raising conntrack limits or adding swap would reduce stability margin under sustained traffic.
 
+The MT7615 5.0.5.1 SingleSKU transmit-power compensation path originally initialized its spatial-stream array index to zero and then subtracted one when spatial expansion was active. Source preparation restores the intended 1-4 stream to 0-3 index mapping and maps an invalid stream count to the conservative single-stream entry. Legal inputs keep their original calibration result, while malformed ATE input can no longer read before the compensation array.
+
 ## Image builder correctness
 
 The locked upstream `mkimage` host tool originally parsed dotted kernel and filesystem versions with `%d` directly into `uint8_t` fields. That makes `sscanf` write an `int` through a one-byte pointer and can overwrite adjacent uImage tail fields. Source preparation changes the conversions to `%hhu` and checks their return counts. The resulting image is still independently checked for header CRC, data CRC, Linux 3.4, filesystem 3.9 and RM2100 identity.

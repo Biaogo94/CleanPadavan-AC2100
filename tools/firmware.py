@@ -227,6 +227,30 @@ USERLAND_SOURCE_PATCHES = (
         "xl2tpd conditional close scope",
     ),
 )
+WIRELESS_SOURCE_PATCHES = (
+    (
+        "trunk/proprietary/rt_wifi/rtpci/5.0.5.1/mt7615/txpwr/single_sku.c",
+        "\tif ((ucPhymode == MODE_HTMIX) || (ucPhymode == MODE_HTGREENFIELD)) {\n"
+        "\t\tucNss = (ucMCS >> 3) + 1;\n"
+        "\t\tucMCS &= 0x7;\n"
+        "\t}",
+        "\tif ((ucPhymode == MODE_HTMIX) || (ucPhymode == MODE_HTGREENFIELD)) {\n"
+        "\t\tucNss = (ucMCS >> 3) + 1;\n"
+        "\t\tucMCS &= 0x7;\n"
+        "\t}\n\n"
+        "\tif ((ucNss == 0) || (ucNss > SKU_TX_SPATIAL_STREAM_NUM))\n"
+        "\t\tucNss = 1;\n"
+        "\tucNSS = ucNss - 1;",
+        "MT7615 spatial-stream index validation",
+    ),
+    (
+        "trunk/proprietary/rt_wifi/rtpci/5.0.5.1/mt7615/txpwr/single_sku.c",
+        "cTxPowerCompBackup[ucBandIdx][ucRateOffset][ucNSS - 1]",
+        "cTxPowerCompBackup[ucBandIdx][ucRateOffset][ucNSS]",
+        "MT7615 zero-based spatial-stream lookup",
+    ),
+)
+SOURCE_PATCHES = USERLAND_SOURCE_PATCHES + WIRELESS_SOURCE_PATCHES
 SMP_SOURCE_CHECKS = (
     ("trunk/user/rc/rc.c", "\tset_cpu_affinity(is_ap_mode);", "CPU affinity startup"),
     (
@@ -487,7 +511,7 @@ def prepare_source(
         )
         runtime_network.write_text(network_content, encoding="utf-8", newline="\n")
 
-    for relative_path, old, new, label in USERLAND_SOURCE_PATCHES:
+    for relative_path, old, new, label in SOURCE_PATCHES:
         source_file = source / relative_path
         if not source_file.is_file():
             continue
@@ -583,7 +607,7 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
         and SFE_RUNTIME_ORIGINAL not in network_content,
     }
     source_cache: dict[str, str] = {}
-    for relative_path, old, new, label in USERLAND_SOURCE_PATCHES:
+    for relative_path, old, new, label in SOURCE_PATCHES:
         source_file = source / relative_path
         if relative_path not in source_cache:
             source_cache[relative_path] = (
@@ -623,6 +647,13 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
                 "isdigit",
                 "memset",
             ],
+        },
+        "wireless_hardening": {
+            "driver": "mt7615-5.0.5.1",
+            "exact_source_patches": len(WIRELESS_SOURCE_PATCHES),
+            "spatial_stream_index_validated": True,
+            "spatial_stream_range": [1, 4],
+            "invalid_spatial_stream_fallback": 1,
         },
         "watchdog": {"default_enabled": True},
     }

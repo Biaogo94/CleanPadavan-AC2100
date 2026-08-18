@@ -373,6 +373,19 @@ class SourcePreparationTests(unittest.TestCase):
                 "                    close (c->fd);\n"
                 "                    c->fd = -1;\n",
             ),
+            "mt7615_single_sku": (
+                "trunk/proprietary/rt_wifi/rtpci/5.0.5.1/mt7615/txpwr/single_sku.c",
+                "\tUINT8  ucNSS = 0;\n"
+                "\tif ((ucPhymode == MODE_HTMIX) || "
+                "(ucPhymode == MODE_HTGREENFIELD)) {\n"
+                "\t\tucNss = (ucMCS >> 3) + 1;\n"
+                "\t\tucMCS &= 0x7;\n"
+                "\t}\n"
+                "\tcPowerOffset = (fgSE) ? "
+                "(pAd->CommonCfg.cTxPowerCompBackup[ucBandIdx][ucRateOffset]"
+                "[ucNSS - 1]) : "
+                "(pAd->CommonCfg.cTxPowerCompBackup[ucBandIdx][ucRateOffset][3]);\n",
+            ),
         }
         paths: dict[str, Path] = {}
         for name, (relative_path, content) in contents.items():
@@ -606,6 +619,13 @@ class SourcePreparationTests(unittest.TestCase):
                 document["network_distribution"]["rps_xps_queue_policy_verified"]
             )
             self.assertEqual(document["userland_hardening"]["exact_source_patches"], 13)
+            self.assertEqual(document["wireless_hardening"]["exact_source_patches"], 2)
+            self.assertTrue(
+                document["wireless_hardening"]["spatial_stream_index_validated"]
+            )
+            self.assertEqual(
+                document["wireless_hardening"]["invalid_spatial_stream_fallback"], 1
+            )
             self.assertTrue(document["watchdog"]["default_enabled"])
 
     def test_prepare_source_hardens_default_userland_components(self) -> None:
@@ -646,6 +666,11 @@ class SourcePreparationTests(unittest.TestCase):
             xl2tpd = paths["xl2tpd"].read_text(encoding="utf-8")
             self.assertIn("if (!kernel_support) {", xl2tpd)
             self.assertIn("                 }\n#endif", xl2tpd)
+            single_sku = paths["mt7615_single_sku"].read_text(encoding="utf-8")
+            self.assertIn("ucNss > SKU_TX_SPATIAL_STREAM_NUM", single_sku)
+            self.assertIn("ucNSS = ucNss - 1;", single_sku)
+            self.assertIn("[ucRateOffset][ucNSS]", single_sku)
+            self.assertNotIn("[ucRateOffset][ucNSS - 1]", single_sku)
 
     def test_prepare_source_applies_the_xz_gettext_compatibility_fix(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
