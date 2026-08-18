@@ -56,7 +56,7 @@ CPU_FREQUENCY=bootloader \
 bash scripts/build-firmware.sh
 ```
 
-`CPU_FREQUENCY` 只接受 `900` 或 `bootloader`，省略时使用 `bootloader`。默认输出在 `dist/`，包含固件、`manifest.json`、Source Lock、实际 Firmware Profile、最终 `kernel-3.4.config`、`performance-profile.json`、`runtime-policy.json` 和 `SHA256SUMS`。
+`CPU_FREQUENCY` 只接受 `900` 或 `bootloader`，省略时使用 `bootloader`。默认输出在 `dist/`，包含固件、`manifest.json`、Source Lock、实际 Firmware Profile、最终 `kernel-3.4.config`、`performance-profile.json`、`runtime-policy.json`、`build-warning-policy.json` 和 `SHA256SUMS`。
 
 ## 首次部署
 

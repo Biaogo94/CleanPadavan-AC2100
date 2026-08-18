@@ -59,8 +59,11 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("inputs.cpu_frequency || 'bootloader'", workflow)
         self.assertIn("configure-profile", build_script)
         self.assertIn("verify-source-policy", build_script)
+        self.assertIn("verify-build-log", build_script)
         self.assertIn("verify-kernel-config", build_script)
         self.assertIn("runtime-policy.json", build_script)
+        self.assertIn("build-warning-policy.json", build_script)
+        self.assertIn("export LC_ALL=C", build_script)
         self.assertIn("cpu-900mhz", build_script)
 
 

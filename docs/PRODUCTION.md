@@ -8,6 +8,7 @@ A successful GitHub Actions run creates a Release Candidate, not a Production Re
 | Firmware Profile | `rm2100-3.4.config` | RM2100, Linux 3.4, AU dual-band policy, selected CPU mode, approved options only |
 | CPU baseline | `kernel-3.4.config` and `performance-profile.json` | Requested PLL mode, 4-way SMP, HZ=250, SFE, RPS and XPS all match |
 | Runtime fast path | `runtime-policy.json` and prepared-source verification | SFE mode 1 is the clean-NVRAM default; bridge bypass is off; module state and failure fallback are verified |
+| Compiler warnings | `build-warning-policy.json` | Every enforced high-risk warning category is zero; remaining legacy warning count is recorded |
 | Provisioning | Build log and deployment record | No universal defaults; secrets absent from logs |
 | Image integrity | `manifest.json` and `SHA256SUMS` | uImage header/data CRC, RM2100, 3.4, SHA-256 pass |
 | CI | GitHub Actions run URL | Tests and full firmware build pass |

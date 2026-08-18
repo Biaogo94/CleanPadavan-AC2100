@@ -27,6 +27,12 @@ Hardware NAT remains disabled by default for the MT7615 path, matching upstream 
 
 The locked upstream `mkimage` host tool originally parsed dotted kernel and filesystem versions with `%d` directly into `uint8_t` fields. That makes `sscanf` write an `int` through a one-byte pointer and can overwrite adjacent uImage tail fields. Source preparation changes the conversions to `%hhu` and checks their return counts. The resulting image is still independently checked for header CRC, data CRC, Linux 3.4, filesystem 3.9 and RM2100 identity.
 
+## Compiled userland correctness
+
+The default root filesystem includes the router startup process, 802.1X, PPTP relay, LAN authentication, UDP multicast proxy, wireless interface renaming, UPnP event handling and xl2tpd even when optional add-on features are disabled. Source preparation therefore fixes the high-risk warnings in those compiled paths instead of dismissing them as third-party noise: missing declarations are added, `isdigit` receives an unsigned byte, empty strings are checked by content, the PPTP interface expression is bounded, and intentional state-machine fallthrough and conditional close scopes are explicit.
+
+The complete build is captured with `LC_ALL=C` and checked after linking. `build-warning-policy.json` records the total legacy warning count and proves that the enforced high-risk categories are zero. The gate rejects implicit function declarations, format argument type mismatches, string-literal address comparisons, truncation, accidental fallthrough, array bounds, overflow, uninitialized values, use-after-free, null dereferences, incompatible pointer conversions and missing returns. Obsolete Autoconf diagnostics and known indentation warnings in host-side legacy compression tools remain visible but do not fail a build unless they enter an unsafe category.
+
 ## Measurement contract
 
 Qualification compares the same immutable bundle and test setup with SFE disabled and SFE mode 1. Record bidirectional TCP throughput, UDP loss, CPU load, free memory, temperature, SFE exceptions and interface errors. Promotion requires at least 900 Mbit/s wired TCP with SFE mode 1, no unexplained regression above 5%, no persistent memory growth, and no crash or packet-loss excursion during the 72-hour soak.

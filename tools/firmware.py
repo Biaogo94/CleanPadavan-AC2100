@@ -112,6 +112,180 @@ SFE_RUNTIME_HARDENED = """\
 \t\t\tdoSystem("echo 1 > /sys/fast_classifier/skip_to_bridge_ingress");
 \t}
 """
+USERLAND_SOURCE_PATCHES = (
+    (
+        "trunk/user/rc/rc.c",
+        '#include "rc.h"\n#include "gpio_pins.h"',
+        '#include "rc.h"\n#include <flash_mtd.h>\n#include "gpio_pins.h"',
+        "rc flash MTD prototype",
+    ),
+    (
+        "trunk/user/802.1x/rtdot1x.c",
+        "#include <stdlib.h>\n#include <stdio.h>",
+        "#include <ctype.h>\n#include <stdlib.h>\n#include <stdio.h>",
+        "802.1X ctype prototype",
+    ),
+    (
+        "trunk/user/802.1x/rtdot1x.c",
+        "\t\tif (isdigit(prefix_name[c-1]))",
+        "\t\tif (isdigit((unsigned char)prefix_name[c-1]))",
+        "802.1X ctype argument",
+    ),
+    (
+        "trunk/user/accel-pptpd/pptpd-1.3.3/compat.c",
+        '#include "compat.h"\n\n#ifndef HAVE_STRLCPY\n#include <string.h>\n#include <stdio.h>',
+        '#include "compat.h"\n\n#include <string.h>\n\n#ifndef HAVE_STRLCPY\n#include <stdio.h>',
+        "PPTP memset prototype",
+    ),
+    (
+        "trunk/user/accel-pptpd/pptpd-1.3.3/bcrelay.c",
+        '  if (ifin == "") {\n'
+        '       syslog(LOG_INFO,"Incoming interface required!");\n'
+        "       showusage(argv[0]);\n"
+        "       _exit(1);\n"
+        "  }\n"
+        '  if (ifout == "" && ipsec == "") {\n',
+        "  if (*ifin == '\\0') {\n"
+        '       syslog(LOG_INFO,"Incoming interface required!");\n'
+        "       showusage(argv[0]);\n"
+        "       _exit(1);\n"
+        "  }\n"
+        "  if (*ifout == '\\0' && *ipsec == '\\0') {\n",
+        "PPTP interface argument checks",
+    ),
+    (
+        "trunk/user/accel-pptpd/pptpd-1.3.3/bcrelay.c",
+        "  } else {\n"
+        '        sprintf(interfaces,"%s|%s", ifin, ifout);\n'
+        "  }",
+        "  } else {\n"
+        '        c = snprintf(interfaces, sizeof(interfaces), "%s|%s", ifin, ifout);\n'
+        "        if (c < 0 || c >= (int)sizeof(interfaces)) {\n"
+        '                syslog(LOG_ERR, "Interface filter is too long");\n'
+        "                _exit(1);\n"
+        "        }\n"
+        "  }",
+        "PPTP bounded interface filter",
+    ),
+    (
+        "trunk/user/accel-pptpd/pptpd-1.3.3/bcrelay.c",
+        '    } else if (ipsec != "" && strncmp(ifs.ifc_req[i].ifr_name, "ipsec", 5) == 0) {',
+        "    } else if (*ipsec != '\\0' && "
+        'strncmp(ifs.ifc_req[i].ifr_name, "ipsec", 5) == 0) {',
+        "PPTP IPsec argument check",
+    ),
+    (
+        "trunk/user/lanauth/lanauth.c",
+        "\tif (!pass || !*pass) usage();",
+        "\tif (!*pass) usage();",
+        "LAN auth password check",
+    ),
+    (
+        "trunk/user/udpxy/util.c",
+        'static char s_sysinfo [80] = "\\0";',
+        'static char s_sysinfo [200] = "\\0";',
+        "udpxy system information buffer",
+    ),
+    (
+        "trunk/user/udpxy/util.c",
+        "        (void) snprintf (s_sysinfo, sizeof(s_sysinfo)-1, \"%s %s %s\",",
+        "        (void) snprintf (s_sysinfo, sizeof(s_sysinfo), \"%s %s %s\",",
+        "udpxy bounded system information write",
+    ),
+    (
+        "trunk/user/wireless_tools/ifrename.c",
+        "\t  usage(); \n\tcase 'c':",
+        "\t  usage(); \n\t  break;\n\tcase 'c':",
+        "ifrename usage fallthrough",
+    ),
+    (
+        "trunk/user/miniupnpd/miniupnpd-2.x/upnpevents.c",
+        "\t\t\t\tif(obj->state != EConnecting)\n"
+        "\t\t\t\t\tbreak;\n"
+        "\t\t\tcase EConnecting:",
+        "\t\t\t\tif(obj->state != EConnecting)\n"
+        "\t\t\t\t\tbreak;\n"
+        "\t\t\t\t/* fall through */\n"
+        "\t\t\tcase EConnecting:",
+        "miniupnpd connection-state fallthrough",
+    ),
+    (
+        "trunk/user/xl2tpd/xl2tpd.c",
+        "#ifdef USE_KERNEL\n"
+        "                 if (!kernel_support)\n"
+        "#endif\n"
+        "                    close (c->fd);\n"
+        "                    c->fd = -1;",
+        "#ifdef USE_KERNEL\n"
+        "                 if (!kernel_support) {\n"
+        "#endif\n"
+        "                    close (c->fd);\n"
+        "#ifdef USE_KERNEL\n"
+        "                 }\n"
+        "#endif\n"
+        "                    c->fd = -1;",
+        "xl2tpd conditional close scope",
+    ),
+)
+SMP_SOURCE_CHECKS = (
+    ("trunk/user/rc/rc.c", "\tset_cpu_affinity(is_ap_mode);", "CPU affinity startup"),
+    (
+        "trunk/user/rc/smp.c",
+        "\t{ GIC_IRQ_FE,    SMP_MASK_CPU1 },",
+        "MT7621 frame-engine IRQ affinity",
+    ),
+    (
+        "trunk/user/rc/smp.c",
+        "\t{ GIC_IRQ_PCIE0, SMP_MASK_CPU2 },",
+        "MT7621 PCIe0 IRQ affinity",
+    ),
+    (
+        "trunk/user/rc/smp.c",
+        "\t{ GIC_IRQ_PCIE1, SMP_MASK_CPU3 },",
+        "MT7621 PCIe1 IRQ affinity",
+    ),
+    (
+        "trunk/user/rc/smp.c",
+        "\t\t\trps_queue_set(rps_iflist[j], last_cpu_mask);",
+        "RPS queue policy",
+    ),
+    (
+        "trunk/user/rc/smp.c",
+        "\t\t\txps_queue_set(rps_iflist[j], last_cpu_mask);",
+        "XPS queue policy",
+    ),
+)
+HIGH_RISK_WARNING_PATTERNS = (
+    ("implicit-function-declaration", re.compile(r"warning: implicit declaration of function")),
+    (
+        "string-literal-address-comparison",
+        re.compile(r"warning: comparison with string literal results in unspecified behavior"),
+    ),
+    (
+        "format-argument-type",
+        re.compile(r"warning: format .* expects argument of type"),
+    ),
+    ("format-truncation", re.compile(r"warning: .*may be truncated")),
+    ("always-true-address", re.compile(r"warning: the address of .* will always evaluate")),
+    ("implicit-fallthrough", re.compile(r"warning: this statement may fall through")),
+    (
+        "array-bounds",
+        re.compile(r"warning: .*(?:array subscript|array bounds).*\[-Warray-bounds"),
+    ),
+    (
+        "overflow",
+        re.compile(r"warning: .*\[-W(?:stringop-)?overflow(?:=)?\]"),
+    ),
+    ("uninitialized", re.compile(r"warning: .*uninitialized")),
+    ("use-after-free", re.compile(r"warning: .*use-after-free")),
+    ("null-dereference", re.compile(r"warning: .*null .*dereference")),
+    ("incompatible-pointer-types", re.compile(r"warning: .*incompatible pointer type")),
+    ("int-conversion", re.compile(r"warning: .*\[-Wint-conversion\]")),
+    (
+        "missing-return",
+        re.compile(r"warning: control reaches end of non-void function"),
+    ),
+)
 
 
 class FirmwareError(ValueError):
@@ -313,6 +487,14 @@ def prepare_source(
         )
         runtime_network.write_text(network_content, encoding="utf-8", newline="\n")
 
+    for relative_path, old, new, label in USERLAND_SOURCE_PATCHES:
+        source_file = source / relative_path
+        if not source_file.is_file():
+            continue
+        source_content = source_file.read_text(encoding="utf-8")
+        source_content = replace_exact_once(source_content, old, new, label)
+        source_file.write_text(source_content, encoding="utf-8", newline="\n")
+
     xz_makefile = source / "trunk" / "tools" / "mksquashfs_xz" / "Makefile"
     if xz_makefile.is_file():
         xz_content = xz_makefile.read_text(encoding="utf-8")
@@ -400,9 +582,25 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
         "SFE module state handling": network_content.count(SFE_RUNTIME_HARDENED) == 1
         and SFE_RUNTIME_ORIGINAL not in network_content,
     }
+    source_cache: dict[str, str] = {}
+    for relative_path, old, new, label in USERLAND_SOURCE_PATCHES:
+        source_file = source / relative_path
+        if relative_path not in source_cache:
+            source_cache[relative_path] = (
+                source_file.read_text(encoding="utf-8") if source_file.is_file() else ""
+            )
+        content = source_cache[relative_path]
+        checks[label] = content.count(new) == 1 and (old in new or old not in content)
+    for relative_path, snippet, label in SMP_SOURCE_CHECKS:
+        source_file = source / relative_path
+        if relative_path not in source_cache:
+            source_cache[relative_path] = (
+                source_file.read_text(encoding="utf-8") if source_file.is_file() else ""
+            )
+        checks[label] = source_cache[relative_path].count(snippet) == 1
     failed = [name for name, passed in checks.items() if not passed]
     if failed:
-        raise FirmwareError(f"runtime source policy failed: {', '.join(failed)}")
+        raise FirmwareError(f"source policy failed: {', '.join(failed)}")
 
     document: dict[str, object] = {
         "schema": 1,
@@ -412,7 +610,49 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
             "module_state_rechecked": True,
             "conntrack_fallback_on_load_failure": True,
         },
+        "network_distribution": {
+            "mt7621_irq_affinity_verified": True,
+            "rps_xps_queue_policy_verified": True,
+        },
+        "userland_hardening": {
+            "exact_source_patches": len(USERLAND_SOURCE_PATCHES),
+            "bounded_pptp_interface_filter": True,
+            "ctype_arguments_are_unsigned": True,
+            "implicit_function_declarations_removed": [
+                "flash_mtd_read",
+                "isdigit",
+                "memset",
+            ],
+        },
         "watchdog": {"default_enabled": True},
+    }
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return document
+
+
+def verify_build_log(path: Path, report: Path) -> dict[str, object]:
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    warning_lines = [line for line in lines if "warning:" in line]
+    category_counts = {
+        name: sum(1 for line in warning_lines if pattern.search(line))
+        for name, pattern in HIGH_RISK_WARNING_PATTERNS
+    }
+    failed = {name: count for name, count in category_counts.items() if count}
+    if failed:
+        summary = ", ".join(f"{name}={count}" for name, count in failed.items())
+        raise FirmwareError(f"forbidden compiler warnings: {summary}")
+
+    document: dict[str, object] = {
+        "schema": 1,
+        "total_warnings": len(warning_lines),
+        "high_risk_warnings": 0,
+        "legacy_warnings": len(warning_lines),
+        "enforced_categories": category_counts,
     }
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(
@@ -610,6 +850,10 @@ def build_parser() -> argparse.ArgumentParser:
     verify_source.add_argument("source", type=Path)
     verify_source.add_argument("--report", required=True, type=Path)
 
+    verify_warnings = subparsers.add_parser("verify-build-log")
+    verify_warnings.add_argument("build_log", type=Path)
+    verify_warnings.add_argument("--report", required=True, type=Path)
+
     verify = subparsers.add_parser("verify-image")
     verify.add_argument("image", type=Path)
     verify.add_argument("--manifest", required=True, type=Path)
@@ -669,7 +913,11 @@ def main() -> int:
             return 0
         if arguments.command == "verify-source-policy":
             verify_source_policy(arguments.source, arguments.report)
-            print(f"verified runtime source policy: {arguments.source}")
+            print(f"verified source policy: {arguments.source}")
+            return 0
+        if arguments.command == "verify-build-log":
+            verify_build_log(arguments.build_log, arguments.report)
+            print(f"verified compiler warning policy: {arguments.build_log}")
             return 0
         if arguments.command == "verify-kernel-config":
             verify_kernel_config(

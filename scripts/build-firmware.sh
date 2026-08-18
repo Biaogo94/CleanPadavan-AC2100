@@ -10,6 +10,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-$REPOSITORY/dist}"
 CACHE_DIR="${CACHE_DIR:-$REPOSITORY/.cache/downloads}"
 PYTHON="${PYTHON:-python3}"
 CPU_FREQUENCY="${CPU_FREQUENCY:-bootloader}"
+export LC_ALL=C
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -42,7 +43,7 @@ download_checked() {
   mv -- "$temporary" "$target"
 }
 
-for command_name in curl fakeroot find git sha256sum tar; do
+for command_name in curl fakeroot find git sha256sum tar tee; do
   require_command "$command_name"
 done
 
@@ -81,6 +82,8 @@ trap cleanup EXIT
 SOURCE_DIR="$BUILD_ROOT/rt-n56u"
 [[ ! -e "$SOURCE_DIR" ]] || die "build source path already exists: $SOURCE_DIR"
 RENDERED_PROFILE="$BUILD_ROOT/rm2100-3.4.config"
+BUILD_LOG="$BUILD_ROOT/build.log"
+WARNING_REPORT="$BUILD_ROOT/build-warning-policy.json"
 "$PYTHON" "$REPOSITORY/tools/firmware.py" configure-profile \
   "$PROFILE_FILE" "$RENDERED_PROFILE" --cpu-frequency "$CPU_FREQUENCY"
 mkdir -p -- "$CACHE_DIR"
@@ -115,7 +118,9 @@ cp -- "$OPENSSL_ARCHIVE" "$SOURCE_DIR/trunk/libs/libssl/openssl-1.1.1w.tar.gz"
 (
   cd -- "$SOURCE_DIR/trunk"
   fakeroot ./build_firmware RM2100
-)
+) 2>&1 | tee "$BUILD_LOG"
+"$PYTHON" "$REPOSITORY/tools/firmware.py" verify-build-log "$BUILD_LOG" \
+  --report "$WARNING_REPORT"
 
 mapfile -d '' images < <(find "$SOURCE_DIR/trunk/images" -maxdepth 1 -type f \
   -name 'RM2100_3.4*.trx' -print0)
@@ -134,6 +139,7 @@ cp -- "$LOCK_FILE" "$OUTPUT_DIR/build-lock.json"
 cp -- "$RENDERED_PROFILE" "$OUTPUT_DIR/rm2100-3.4.config"
 cp -- "$SOURCE_DIR/trunk/linux-3.4.x/.config" "$OUTPUT_DIR/kernel-3.4.config"
 cp -- "$BUILD_ROOT/runtime-policy.json" "$OUTPUT_DIR/runtime-policy.json"
+cp -- "$WARNING_REPORT" "$OUTPUT_DIR/build-warning-policy.json"
 
 "$PYTHON" "$REPOSITORY/tools/firmware.py" verify-kernel-config \
   "$OUTPUT_DIR/kernel-3.4.config" \
@@ -152,7 +158,7 @@ BUILDER_COMMIT="$(git -C "$REPOSITORY" rev-parse HEAD)"
   cd -- "$OUTPUT_DIR"
   sha256sum "$bundle_image_name" manifest.json build-lock.json \
     rm2100-3.4.config kernel-3.4.config performance-profile.json \
-    runtime-policy.json > SHA256SUMS
+    runtime-policy.json build-warning-policy.json > SHA256SUMS
 )
 
 printf 'Firmware Bundle: %s\n' "$OUTPUT_DIR"

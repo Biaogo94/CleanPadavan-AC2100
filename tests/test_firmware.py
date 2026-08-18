@@ -304,6 +304,84 @@ class SourcePreparationTests(unittest.TestCase):
         wifi_password.write_text("WiFi-Test-Password-2847", encoding="utf-8")
         return source, admin_password, wifi_password
 
+    def write_userland_policy_sources(self, source: Path) -> dict[str, Path]:
+        contents = {
+            "rc": (
+                "trunk/user/rc/rc.c",
+                '#include "rc.h"\n#include "gpio_pins.h"\n'
+                "\tset_cpu_affinity(is_ap_mode);\n",
+            ),
+            "smp": (
+                "trunk/user/rc/smp.c",
+                "\t{ GIC_IRQ_FE,    SMP_MASK_CPU1 },\n"
+                "\t{ GIC_IRQ_PCIE0, SMP_MASK_CPU2 },\n"
+                "\t{ GIC_IRQ_PCIE1, SMP_MASK_CPU3 },\n"
+                "\t\t\trps_queue_set(rps_iflist[j], last_cpu_mask);\n"
+                "\t\t\txps_queue_set(rps_iflist[j], last_cpu_mask);\n",
+            ),
+            "dot1x": (
+                "trunk/user/802.1x/rtdot1x.c",
+                "#include <stdlib.h>\n#include <stdio.h>\n"
+                "\t\tif (isdigit(prefix_name[c-1]))\n",
+            ),
+            "pptp_compat": (
+                "trunk/user/accel-pptpd/pptpd-1.3.3/compat.c",
+                '#include "compat.h"\n\n#ifndef HAVE_STRLCPY\n'
+                "#include <string.h>\n#include <stdio.h>\n",
+            ),
+            "pptp_relay": (
+                "trunk/user/accel-pptpd/pptpd-1.3.3/bcrelay.c",
+                '  if (ifin == "") {\n'
+                '       syslog(LOG_INFO,"Incoming interface required!");\n'
+                "       showusage(argv[0]);\n"
+                "       _exit(1);\n"
+                "  }\n"
+                '  if (ifout == "" && ipsec == "") {\n'
+                "       showusage(argv[0]);\n"
+                "       _exit(1);\n"
+                "  } else {\n"
+                '        sprintf(interfaces,"%s|%s", ifin, ifout);\n'
+                "  }\n"
+                '    } else if (ipsec != "" && '
+                'strncmp(ifs.ifc_req[i].ifr_name, "ipsec", 5) == 0) {\n',
+            ),
+            "lanauth": (
+                "trunk/user/lanauth/lanauth.c",
+                "\tif (!pass || !*pass) usage();\n",
+            ),
+            "udpxy": (
+                "trunk/user/udpxy/util.c",
+                'static char s_sysinfo [80] = "\\0";\n'
+                "        (void) snprintf (s_sysinfo, sizeof(s_sysinfo)-1, "
+                '"%s %s %s",\n',
+            ),
+            "ifrename": (
+                "trunk/user/wireless_tools/ifrename.c",
+                "\t  usage(); \n\tcase 'c':\n",
+            ),
+            "upnp": (
+                "trunk/user/miniupnpd/miniupnpd-2.x/upnpevents.c",
+                "\t\t\t\tif(obj->state != EConnecting)\n"
+                "\t\t\t\t\tbreak;\n"
+                "\t\t\tcase EConnecting:\n",
+            ),
+            "xl2tpd": (
+                "trunk/user/xl2tpd/xl2tpd.c",
+                "#ifdef USE_KERNEL\n"
+                "                 if (!kernel_support)\n"
+                "#endif\n"
+                "                    close (c->fd);\n"
+                "                    c->fd = -1;\n",
+            ),
+        }
+        paths: dict[str, Path] = {}
+        for name, (relative_path, content) in contents.items():
+            path = source / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+            paths[name] = path
+        return paths
+
     def run_preparation(
         self, source: Path, admin_password: Path, wifi_password: Path
     ) -> subprocess.CompletedProcess[str]:
@@ -484,6 +562,7 @@ class SourcePreparationTests(unittest.TestCase):
                 '#endif\n',
                 encoding="utf-8",
             )
+            self.write_userland_policy_sources(source)
 
             result = self.run_preparation(source, admin_password, wifi_password)
 
@@ -520,7 +599,53 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertEqual(document["sfe"]["default_mode"], 1)
             self.assertFalse(document["sfe"]["bridge_ingress_bypass"])
             self.assertTrue(document["sfe"]["module_state_rechecked"])
+            self.assertTrue(
+                document["network_distribution"]["mt7621_irq_affinity_verified"]
+            )
+            self.assertTrue(
+                document["network_distribution"]["rps_xps_queue_policy_verified"]
+            )
+            self.assertEqual(document["userland_hardening"]["exact_source_patches"], 13)
             self.assertTrue(document["watchdog"]["default_enabled"])
+
+    def test_prepare_source_hardens_default_userland_components(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            source, admin_password, wifi_password = self.create_base_source(directory)
+            paths = self.write_userland_policy_sources(source)
+
+            result = self.run_preparation(source, admin_password, wifi_password)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("#include <flash_mtd.h>", paths["rc"].read_text(encoding="utf-8"))
+            dot1x = paths["dot1x"].read_text(encoding="utf-8")
+            self.assertIn("#include <ctype.h>", dot1x)
+            self.assertIn("isdigit((unsigned char)prefix_name[c-1])", dot1x)
+            compat = paths["pptp_compat"].read_text(encoding="utf-8")
+            self.assertLess(
+                compat.index("#include <string.h>"),
+                compat.index("#ifndef HAVE_STRLCPY"),
+            )
+            relay = paths["pptp_relay"].read_text(encoding="utf-8")
+            self.assertNotIn('ifin == ""', relay)
+            self.assertNotIn('ipsec != ""', relay)
+            self.assertIn("snprintf(interfaces, sizeof(interfaces)", relay)
+            self.assertIn("Interface filter is too long", relay)
+            self.assertIn(
+                "if (!*pass) usage();",
+                paths["lanauth"].read_text(encoding="utf-8"),
+            )
+            udpxy = paths["udpxy"].read_text(encoding="utf-8")
+            self.assertIn("s_sysinfo [200]", udpxy)
+            self.assertIn("snprintf (s_sysinfo, sizeof(s_sysinfo),", udpxy)
+            self.assertIn(
+                "usage(); \n\t  break;",
+                paths["ifrename"].read_text(encoding="utf-8"),
+            )
+            self.assertIn("/* fall through */", paths["upnp"].read_text(encoding="utf-8"))
+            xl2tpd = paths["xl2tpd"].read_text(encoding="utf-8")
+            self.assertIn("if (!kernel_support) {", xl2tpd)
+            self.assertIn("                 }\n#endif", xl2tpd)
 
     def test_prepare_source_applies_the_xz_gettext_compatibility_fix(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -601,6 +726,72 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertNotIn("wget", rendered_makefile)
             self.assertNotIn("$(SRC_NAME).patch", rendered_makefile)
             self.assertIn("test -f $(SRC_NAME).tar.gz", rendered_makefile)
+
+
+class BuildWarningPolicyTests(unittest.TestCase):
+    def run_warning_verification(
+        self, directory: Path, content: str
+    ) -> tuple[subprocess.CompletedProcess[str], Path]:
+        build_log = directory / "build.log"
+        report = directory / "build-warning-policy.json"
+        build_log.write_text(content, encoding="utf-8")
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(FIRMWARE_TOOL),
+                "verify-build-log",
+                str(build_log),
+                "--report",
+                str(report),
+            ],
+            cwd=REPOSITORY,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result, report
+
+    def test_build_log_allows_audited_legacy_warnings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            result, report = self.run_warning_verification(
+                directory,
+                "configure.ac: warning: The macro `AC_TRY_COMPILE' is obsolete.\n"
+                "legacy.cpp:42: warning: this 'if' clause does not guard... "
+                "[-Wmisleading-indentation]\n",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            document = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(document["total_warnings"], 2)
+            self.assertEqual(document["legacy_warnings"], 2)
+            self.assertEqual(document["high_risk_warnings"], 0)
+            self.assertTrue(
+                all(count == 0 for count in document["enforced_categories"].values())
+            )
+
+    def test_build_log_rejects_high_risk_compiler_warnings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            result, report = self.run_warning_verification(
+                directory,
+                "rc.c:65: warning: implicit declaration of function 'flash_mtd_read'\n"
+                "bcrelay.c:384: warning: comparison with string literal results in "
+                "unspecified behavior [-Waddress]\n"
+                "mkimage.c: warning: format '%d' expects argument of type 'int *'\n"
+                "util.c: warning: output may be truncated [-Wformat-truncation=]\n"
+                "state.c: warning: this statement may fall through [-Wimplicit-fallthrough=]\n"
+                "queue.c: warning: value may be used uninitialized [-Wmaybe-uninitialized]\n",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("implicit-function-declaration=1", result.stderr)
+            self.assertIn("string-literal-address-comparison=1", result.stderr)
+            self.assertIn("format-argument-type=1", result.stderr)
+            self.assertIn("format-truncation=1", result.stderr)
+            self.assertIn("implicit-fallthrough=1", result.stderr)
+            self.assertIn("uninitialized=1", result.stderr)
+            self.assertFalse(report.exists())
 
 
 class FirmwareVerificationTests(unittest.TestCase):
