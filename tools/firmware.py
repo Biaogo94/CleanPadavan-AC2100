@@ -226,6 +226,110 @@ USERLAND_SOURCE_PATCHES = (
         "                    c->fd = -1;",
         "xl2tpd conditional close scope",
     ),
+    (
+        "trunk/user/accel-pptpd/pptpd-1.3.3/bcrelay.c",
+        "/* uncomment if you compile this without poptop's configure script */\n"
+        "#define HAVE_FORK",
+        "/* uncomment if you compile this without poptop's configure script */\n"
+        "#ifndef HAVE_FORK\n#define HAVE_FORK\n#endif",
+        "PPTP configure feature guard",
+    ),
+    (
+        "trunk/user/httpd/aspbw.c",
+        "\tif (( len >= 2) &&\n"
+        "\t\t(the_char >= '0' && the_char <= '9')\n"
+        "\t\t|| (the_char >= 'A' && the_char <= 'Z')\n"
+        "\t\t|| (the_char >= 'a' && the_char <= 'z')\n"
+        "\t\t|| the_char == '!' || the_char == '*'\n"
+        "\t\t|| the_char == '(' || the_char == ')'\n"
+        "\t\t|| the_char == '_' || the_char == '-'\n"
+        "\t\t|| the_char == '\\'' || the_char == '.') ",
+        "\tif ((len >= 2) && (\n"
+        "\t\t(the_char >= '0' && the_char <= '9')\n"
+        "\t\t|| (the_char >= 'A' && the_char <= 'Z')\n"
+        "\t\t|| (the_char >= 'a' && the_char <= 'z')\n"
+        "\t\t|| the_char == '!' || the_char == '*'\n"
+        "\t\t|| the_char == '(' || the_char == ')'\n"
+        "\t\t|| the_char == '_' || the_char == '-'\n"
+        "\t\t|| the_char == '\\'' || the_char == '.'))",
+        "HTTP ASCII hex length scope",
+    ),
+    (
+        "trunk/user/httpd/https.c",
+        "static void\n"
+        "http_ssl_info_cb(const SSL *ssl, int where, int ret)\n"
+        "{\n"
+        "\t/* disable SSL renegotiation */\n"
+        "\tif (where & SSL_CB_HANDSHAKE_DONE) {\n"
+        "#if OPENSSL_VERSION_NUMBER < 0x10100000L\n"
+        "\t\tssl->s3->flags |= SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS;\n"
+        "#else\n"
+        "\t\tSSL_set_options(ssl, SSL_OP_NO_RENEGOTIATION);\n"
+        "#endif\n"
+        "\t}\n"
+        "}",
+        "#if OPENSSL_VERSION_NUMBER < 0x10101000L\n"
+        "static void\n"
+        "http_ssl_info_cb(const SSL *ssl, int where, int ret)\n"
+        "{\n"
+        "\t/* disable SSL renegotiation */\n"
+        "\tif (where & SSL_CB_HANDSHAKE_DONE) {\n"
+        "#if OPENSSL_VERSION_NUMBER < 0x10100000L\n"
+        "\t\tssl->s3->flags |= SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS;\n"
+        "#else\n"
+        "\t\tSSL_set_options((SSL *)ssl, SSL_OP_NO_RENEGOTIATION);\n"
+        "#endif\n"
+        "\t}\n"
+        "}\n"
+        "#endif",
+        "HTTPS legacy renegotiation callback scope",
+    ),
+    (
+        "trunk/user/httpd/https.c",
+        "\tssl_options = SSL_OP_ALL | SSL_OP_NO_COMPRESSION | SSL_OP_NO_SSLv2 | "
+        "SSL_OP_NO_SSLv3 |\n"
+        "\t\t\tSSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION;\n\n"
+        "\tSSL_CTX_set_options(ssl_ctx, ssl_options);",
+        "\tssl_options = SSL_OP_ALL | SSL_OP_NO_COMPRESSION | SSL_OP_NO_SSLv2 | "
+        "SSL_OP_NO_SSLv3 |\n"
+        "\t\t\tSSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION;\n"
+        "#if OPENSSL_VERSION_NUMBER >= 0x10101000L\n"
+        "\tssl_options |= SSL_OP_NO_RENEGOTIATION;\n"
+        "#endif\n\n"
+        "\tSSL_CTX_set_options(ssl_ctx, ssl_options);",
+        "HTTPS context renegotiation policy",
+    ),
+    (
+        "trunk/user/httpd/https.c",
+        "\tSSL_CTX_set_info_callback(ssl_ctx, http_ssl_info_cb);",
+        "#if OPENSSL_VERSION_NUMBER < 0x10101000L\n"
+        "\tSSL_CTX_set_info_callback(ssl_ctx, http_ssl_info_cb);\n"
+        "#endif",
+        "HTTPS legacy callback registration",
+    ),
+    (
+        "trunk/user/ebtables/ebtables-2.0.10-4/communication.c",
+        "close_file:\n\tfclose(file);\n\treturn 0;",
+        "close_file:\n"
+        "\tif (fclose(file) != 0 && ret == 0) {\n"
+        "\t\tebt_print_error(\"Could not close file %s\", filename);\n"
+        "\t\tret = -1;\n"
+        "\t}\n"
+        "\treturn ret;",
+        "ebtables counter file result",
+    ),
+    (
+        "trunk/user/ebtables/ebtables-2.0.10-4/ebtables.c",
+        "\t\tif (replace->nentries)\n\t\t\tebt_deliver_counters(replace);\n\t}\n"
+        "\treturn 0;",
+        "\t\tif (replace->nentries) {\n"
+        "\t\t\tebt_deliver_counters(replace);\n"
+        "\t\t\tif (ebt_errormsg[0] != '\\0')\n"
+        "\t\t\t\treturn -1;\n"
+        "\t\t}\n\t}\n"
+        "\treturn 0;",
+        "ebtables counter error propagation",
+    ),
 )
 WIRELESS_SOURCE_PATCHES = (
     (
@@ -356,8 +460,173 @@ HOST_BUILD_SOURCE_PATCHES = (
         "BusyBox applet table I/O results",
     ),
 )
+IMAGE_BUILD_SOURCE_PATCHES = (
+    (
+        "trunk/user/busybox/busybox-1.24.x/applets/usage_pod.c",
+        "\t\tprintf(usage_array[i].aname);",
+        "\t\tprintf(\"%s\", usage_array[i].aname);",
+        "BusyBox usage POD literal format",
+    ),
+    (
+        "trunk/tools/lzma/lzma-4.65/CPP/Common/MyCom.h",
+        "STDMETHOD_(ULONG, Release)() { if (--__m_RefCount != 0)  "
+        + chr(92)
+        + "\n"
+        "  return __m_RefCount; delete this; return 0; }",
+        "STDMETHOD_(ULONG, Release)() { if (--__m_RefCount != 0) { "
+        + chr(92)
+        + "\n"
+        "  return __m_RefCount; } delete this; return 0; }",
+        "LZMA reference-count release scope",
+    ),
+    (
+        "trunk/tools/lzma/lzma-4.65/CPP/Common/MyString.h",
+        "    for (int i = 0; i < _length; i++)\n"
+        "      if (s.Find(_chars[i]) >= 0)\n"
+        "        return i;\n"
+        "      return -1;",
+        "    for (int i = 0; i < _length; i++)\n"
+        "    {\n"
+        "      if (s.Find(_chars[i]) >= 0)\n"
+        "        return i;\n"
+        "    }\n"
+        "    return -1;",
+        "LZMA string search loop scope",
+    ),
+    (
+        "trunk/tools/lzma/lzma-4.65/CPP/7zip/Compress/LzmaEncoder.cpp",
+        "      case NCoderPropID::kNumFastBytes:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.fb = prop.ulVal; break;\n"
+        "      case NCoderPropID::kMatchFinderCycles:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.mc = prop.ulVal; break;\n"
+        "      case NCoderPropID::kAlgorithm:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.algo = prop.ulVal; break;\n"
+        "      case NCoderPropID::kDictionarySize:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.dictSize = prop.ulVal; break;\n"
+        "      case NCoderPropID::kPosStateBits:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.pb = prop.ulVal; break;\n"
+        "      case NCoderPropID::kLitPosBits:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.lp = prop.ulVal; break;\n"
+        "      case NCoderPropID::kLitContextBits:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.lc = prop.ulVal; break;\n"
+        "      case NCoderPropID::kNumThreads:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.numThreads = prop.ulVal; break;\n"
+        "      case NCoderPropID::kMultiThread:\n"
+        "        if (prop.vt != VT_BOOL) return E_INVALIDARG; props.numThreads = "
+        "((prop.boolVal == VARIANT_TRUE) ? 2 : 1); break;\n"
+        "      case NCoderPropID::kEndMarker:\n"
+        "        if (prop.vt != VT_BOOL) return E_INVALIDARG; props.writeEndMark = "
+        "(prop.boolVal == VARIANT_TRUE); break;\n"
+        "      case NCoderPropID::kMatchFinder:\n"
+        "        if (prop.vt != VT_BSTR) return E_INVALIDARG;\n"
+        "        if (!ParseMatchFinder(prop.bstrVal, &props.btMode, &props.numHashBytes "
+        "/* , &_matchFinderBase.skipModeBits */))\n"
+        "          return E_INVALIDARG; break;",
+        "      case NCoderPropID::kNumFastBytes:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG;\n"
+        "        props.fb = prop.ulVal; break;\n"
+        "      case NCoderPropID::kMatchFinderCycles:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG;\n"
+        "        props.mc = prop.ulVal; break;\n"
+        "      case NCoderPropID::kAlgorithm:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG;\n"
+        "        props.algo = prop.ulVal; break;\n"
+        "      case NCoderPropID::kDictionarySize:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG;\n"
+        "        props.dictSize = prop.ulVal; break;\n"
+        "      case NCoderPropID::kPosStateBits:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG;\n"
+        "        props.pb = prop.ulVal; break;\n"
+        "      case NCoderPropID::kLitPosBits:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG;\n"
+        "        props.lp = prop.ulVal; break;\n"
+        "      case NCoderPropID::kLitContextBits:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG;\n"
+        "        props.lc = prop.ulVal; break;\n"
+        "      case NCoderPropID::kNumThreads:\n"
+        "        if (prop.vt != VT_UI4) return E_INVALIDARG;\n"
+        "        props.numThreads = prop.ulVal; break;\n"
+        "      case NCoderPropID::kMultiThread:\n"
+        "        if (prop.vt != VT_BOOL) return E_INVALIDARG;\n"
+        "        props.numThreads = ((prop.boolVal == VARIANT_TRUE) ? 2 : 1); break;\n"
+        "      case NCoderPropID::kEndMarker:\n"
+        "        if (prop.vt != VT_BOOL) return E_INVALIDARG;\n"
+        "        props.writeEndMark = (prop.boolVal == VARIANT_TRUE); break;\n"
+        "      case NCoderPropID::kMatchFinder:\n"
+        "        if (prop.vt != VT_BSTR) return E_INVALIDARG;\n"
+        "        if (!ParseMatchFinder(prop.bstrVal, &props.btMode, &props.numHashBytes "
+        "/* , &_matchFinderBase.skipModeBits */))\n"
+        "          return E_INVALIDARG;\n"
+        "        break;",
+        "LZMA encoder property control flow",
+    ),
+    (
+        "trunk/tools/lzma/lzma-4.65/CPP/7zip/Compress/LZMA_Alone/LzmaBenchCon.cpp",
+        "    UInt64 rating = GetDecompressRating(info.GlobalTime, info.GlobalFreq, "
+        "info.UnpackSize, info.PackSize, info.NumIterations);\n"
+        "    fprintf(f, kSep);",
+        "    UInt64 rating = GetDecompressRating(info.GlobalTime, info.GlobalFreq, "
+        "info.UnpackSize, info.PackSize, info.NumIterations);\n"
+        "    fprintf(f, \"%s\", kSep);",
+        "LZMA benchmark result separator format",
+    ),
+    (
+        "trunk/tools/lzma/lzma-4.65/CPP/7zip/Compress/LZMA_Alone/LzmaBenchCon.cpp",
+        "    fprintf(f, \"   Speed Usage    R/U Rating\");\n"
+        "    if (j == 0)\n"
+        "      fprintf(f, kSep);",
+        "    fprintf(f, \"   Speed Usage    R/U Rating\");\n"
+        "    if (j == 0)\n"
+        "      fprintf(f, \"%s\", kSep);",
+        "LZMA benchmark compression separator format",
+    ),
+    (
+        "trunk/tools/lzma/lzma-4.65/CPP/7zip/Compress/LZMA_Alone/LzmaBenchCon.cpp",
+        "    fprintf(f, \"    KB/s     %%   MIPS   MIPS\");\n"
+        "    if (j == 0)\n"
+        "      fprintf(f, kSep);",
+        "    fprintf(f, \"    KB/s     %%   MIPS   MIPS\");\n"
+        "    if (j == 0)\n"
+        "      fprintf(f, \"%s\", kSep);",
+        "LZMA benchmark decompression separator format",
+    ),
+    (
+        "trunk/tools/lzma/lzma-4.65/CPP/7zip/Compress/LZMA_Alone/LzmaAlone.cpp",
+        "        fprintf(stderr, kWriteError);",
+        "        fprintf(stderr, \"%s\", kWriteError);",
+        "LZMA write error literal format",
+    ),
+    (
+        "trunk/tools/lzma/lzma-4.65/CPP/7zip/Compress/LZMA_Alone/LzmaAlone.cpp",
+        "      fprintf(stderr, kReadError);",
+        "      fprintf(stderr, \"%s\", kReadError);",
+        "LZMA read error literal format",
+    ),
+    (
+        "trunk/tools/lzma/lzma-4.65/C/LzmaEnc.c",
+        "  Bool btMode;\n"
+        "  if (!RangeEnc_Alloc(&p->rc, alloc))\n"
+        "    return SZ_ERROR_MEM;\n"
+        "  btMode = (p->matchFinderBase.btMode != 0);\n"
+        "  #ifdef COMPRESS_MF_MT\n"
+        "  p->mtMode = (p->multiThread && !p->fastMode && btMode);\n"
+        "  #endif",
+        "  if (!RangeEnc_Alloc(&p->rc, alloc))\n"
+        "    return SZ_ERROR_MEM;\n"
+        "  #ifdef COMPRESS_MF_MT\n"
+        "  {\n"
+        "    Bool btMode = (p->matchFinderBase.btMode != 0);\n"
+        "    p->mtMode = (p->multiThread && !p->fastMode && btMode);\n"
+        "  }\n"
+        "  #endif",
+        "LZMA threaded match-finder mode scope",
+    ),
+)
 SOURCE_PATCHES = (
-    USERLAND_SOURCE_PATCHES + WIRELESS_SOURCE_PATCHES + HOST_BUILD_SOURCE_PATCHES
+    USERLAND_SOURCE_PATCHES
+    + WIRELESS_SOURCE_PATCHES
+    + HOST_BUILD_SOURCE_PATCHES
+    + IMAGE_BUILD_SOURCE_PATCHES
 )
 SMP_SOURCE_CHECKS = (
     ("trunk/user/rc/rc.c", "\tset_cpu_affinity(is_ap_mode);", "CPU affinity startup"),
@@ -420,6 +689,30 @@ HIGH_RISK_WARNING_PATTERNS = (
     (
         "missing-return",
         re.compile(r"warning: control reaches end of non-void function"),
+    ),
+    (
+        "format-security",
+        re.compile(r"warning: format not a string literal.*\[-Wformat-security\]"),
+    ),
+    (
+        "misleading-indentation",
+        re.compile(r"warning: this '(?:if|for)' clause does not guard"),
+    ),
+    (
+        "unused-but-set-variable",
+        re.compile(r"warning: variable .* set but not used.*\[-Wunused-but-set-variable\]"),
+    ),
+    (
+        "discarded-qualifiers",
+        re.compile(r"warning: .* discards 'const' qualifier.*\[-Wdiscarded-qualifiers\]"),
+    ),
+    (
+        "ambiguous-parentheses",
+        re.compile(r"warning: suggest parentheses around .*\[-Wparentheses\]"),
+    ),
+    (
+        "macro-redefinition",
+        re.compile(r'warning: ".+" redefined'),
     ),
 )
 
@@ -754,6 +1047,9 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
             "exact_source_patches": len(USERLAND_SOURCE_PATCHES),
             "bounded_pptp_interface_filter": True,
             "ctype_arguments_are_unsigned": True,
+            "ascii_hex_length_scope_verified": True,
+            "ebtables_counter_errors_propagated": True,
+            "https_renegotiation_disabled_in_context": True,
             "implicit_function_declarations_removed": [
                 "flash_mtd_read",
                 "isdigit",
@@ -772,6 +1068,13 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
             "exact_source_patches": len(HOST_BUILD_SOURCE_PATCHES),
             "checked_io_results": ["fgets", "fputs", "pipe", "write", "fclose"],
             "generated_output_close_checked": True,
+        },
+        "image_build_hardening": {
+            "components": ["busybox-1.24.x", "lzma-4.65"],
+            "exact_source_patches": len(IMAGE_BUILD_SOURCE_PATCHES),
+            "ambiguous_control_flow_removed": True,
+            "literal_format_strings": True,
+            "lzma_string_search_checks_all_characters": True,
         },
         "watchdog": {"default_enabled": True},
     }

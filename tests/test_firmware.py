@@ -331,6 +331,8 @@ class SourcePreparationTests(unittest.TestCase):
             ),
             "pptp_relay": (
                 "trunk/user/accel-pptpd/pptpd-1.3.3/bcrelay.c",
+                "/* uncomment if you compile this without poptop's configure script */\n"
+                "#define HAVE_FORK\n"
                 '  if (ifin == "") {\n'
                 '       syslog(LOG_INFO,"Incoming interface required!");\n'
                 "       showusage(argv[0]);\n"
@@ -344,6 +346,46 @@ class SourcePreparationTests(unittest.TestCase):
                 "  }\n"
                 '    } else if (ipsec != "" && '
                 'strncmp(ifs.ifc_req[i].ifr_name, "ipsec", 5) == 0) {\n',
+            ),
+            "http_ascii": (
+                "trunk/user/httpd/aspbw.c",
+                "\tif (( len >= 2) &&\n"
+                "\t\t(the_char >= '0' && the_char <= '9')\n"
+                "\t\t|| (the_char >= 'A' && the_char <= 'Z')\n"
+                "\t\t|| (the_char >= 'a' && the_char <= 'z')\n"
+                "\t\t|| the_char == '!' || the_char == '*'\n"
+                "\t\t|| the_char == '(' || the_char == ')'\n"
+                "\t\t|| the_char == '_' || the_char == '-'\n"
+                "\t\t|| the_char == '\\'' || the_char == '.') \n",
+            ),
+            "https": (
+                "trunk/user/httpd/https.c",
+                "static void\n"
+                "http_ssl_info_cb(const SSL *ssl, int where, int ret)\n"
+                "{\n"
+                "\t/* disable SSL renegotiation */\n"
+                "\tif (where & SSL_CB_HANDSHAKE_DONE) {\n"
+                "#if OPENSSL_VERSION_NUMBER < 0x10100000L\n"
+                "\t\tssl->s3->flags |= SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS;\n"
+                "#else\n"
+                "\t\tSSL_set_options(ssl, SSL_OP_NO_RENEGOTIATION);\n"
+                "#endif\n"
+                "\t}\n"
+                "}\n"
+                "\tssl_options = SSL_OP_ALL | SSL_OP_NO_COMPRESSION | SSL_OP_NO_SSLv2 | "
+                "SSL_OP_NO_SSLv3 |\n"
+                "\t\t\tSSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION;\n\n"
+                "\tSSL_CTX_set_options(ssl_ctx, ssl_options);\n"
+                "\tSSL_CTX_set_info_callback(ssl_ctx, http_ssl_info_cb);\n",
+            ),
+            "ebtables_communication": (
+                "trunk/user/ebtables/ebtables-2.0.10-4/communication.c",
+                "close_file:\n\tfclose(file);\n\treturn 0;\n",
+            ),
+            "ebtables": (
+                "trunk/user/ebtables/ebtables-2.0.10-4/ebtables.c",
+                "\t\tif (replace->nentries)\n\t\t\tebt_deliver_counters(replace);\n\t}\n"
+                "\treturn 0;\n",
             ),
             "lanauth": (
                 "trunk/user/lanauth/lanauth.c",
@@ -410,6 +452,10 @@ class SourcePreparationTests(unittest.TestCase):
                 "\t\twrite(STDOUT_FILENO, usage_array[i].usage, "
                 "strlen(usage_array[i].usage) + 1);\n",
             ),
+            "busybox_usage_pod": (
+                "trunk/user/busybox/busybox-1.24.x/applets/usage_pod.c",
+                "\t\tprintf(usage_array[i].aname);\n",
+            ),
             "busybox_tables": (
                 "trunk/user/busybox/busybox-1.24.x/applets/applet_tables.c",
                 "\tif (argv[2]) {\n"
@@ -431,6 +477,77 @@ class SourcePreparationTests(unittest.TestCase):
                 "\t\t}\n"
                 "\t}\n\n"
                 "\treturn 0;\n}\n",
+            ),
+            "lzma_com": (
+                "trunk/tools/lzma/lzma-4.65/CPP/Common/MyCom.h",
+                "STDMETHOD_(ULONG, Release)() { if (--__m_RefCount != 0)  "
+                + chr(92)
+                + "\n"
+                "  return __m_RefCount; delete this; return 0; }\n",
+            ),
+            "lzma_string": (
+                "trunk/tools/lzma/lzma-4.65/CPP/Common/MyString.h",
+                "    for (int i = 0; i < _length; i++)\n"
+                "      if (s.Find(_chars[i]) >= 0)\n"
+                "        return i;\n"
+                "      return -1;\n",
+            ),
+            "lzma_encoder": (
+                "trunk/tools/lzma/lzma-4.65/CPP/7zip/Compress/LzmaEncoder.cpp",
+                "      case NCoderPropID::kNumFastBytes:\n"
+                "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.fb = prop.ulVal; break;\n"
+                "      case NCoderPropID::kMatchFinderCycles:\n"
+                "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.mc = prop.ulVal; break;\n"
+                "      case NCoderPropID::kAlgorithm:\n"
+                "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.algo = prop.ulVal; break;\n"
+                "      case NCoderPropID::kDictionarySize:\n"
+                "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.dictSize = prop.ulVal; break;\n"
+                "      case NCoderPropID::kPosStateBits:\n"
+                "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.pb = prop.ulVal; break;\n"
+                "      case NCoderPropID::kLitPosBits:\n"
+                "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.lp = prop.ulVal; break;\n"
+                "      case NCoderPropID::kLitContextBits:\n"
+                "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.lc = prop.ulVal; break;\n"
+                "      case NCoderPropID::kNumThreads:\n"
+                "        if (prop.vt != VT_UI4) return E_INVALIDARG; props.numThreads = prop.ulVal; break;\n"
+                "      case NCoderPropID::kMultiThread:\n"
+                "        if (prop.vt != VT_BOOL) return E_INVALIDARG; props.numThreads = "
+                "((prop.boolVal == VARIANT_TRUE) ? 2 : 1); break;\n"
+                "      case NCoderPropID::kEndMarker:\n"
+                "        if (prop.vt != VT_BOOL) return E_INVALIDARG; props.writeEndMark = "
+                "(prop.boolVal == VARIANT_TRUE); break;\n"
+                "      case NCoderPropID::kMatchFinder:\n"
+                "        if (prop.vt != VT_BSTR) return E_INVALIDARG;\n"
+                "        if (!ParseMatchFinder(prop.bstrVal, &props.btMode, &props.numHashBytes "
+                "/* , &_matchFinderBase.skipModeBits */))\n"
+                "          return E_INVALIDARG; break;\n",
+            ),
+            "lzma_bench": (
+                "trunk/tools/lzma/lzma-4.65/CPP/7zip/Compress/LZMA_Alone/LzmaBenchCon.cpp",
+                "    UInt64 rating = GetDecompressRating(info.GlobalTime, info.GlobalFreq, "
+                "info.UnpackSize, info.PackSize, info.NumIterations);\n"
+                "    fprintf(f, kSep);\n"
+                "    fprintf(f, \"   Speed Usage    R/U Rating\");\n"
+                "    if (j == 0)\n"
+                "      fprintf(f, kSep);\n"
+                "    fprintf(f, \"    KB/s     %%   MIPS   MIPS\");\n"
+                "    if (j == 0)\n"
+                "      fprintf(f, kSep);\n",
+            ),
+            "lzma_alone": (
+                "trunk/tools/lzma/lzma-4.65/CPP/7zip/Compress/LZMA_Alone/LzmaAlone.cpp",
+                "        fprintf(stderr, kWriteError);\n"
+                "      fprintf(stderr, kReadError);\n",
+            ),
+            "lzma_enc": (
+                "trunk/tools/lzma/lzma-4.65/C/LzmaEnc.c",
+                "  Bool btMode;\n"
+                "  if (!RangeEnc_Alloc(&p->rc, alloc))\n"
+                "    return SZ_ERROR_MEM;\n"
+                "  btMode = (p->matchFinderBase.btMode != 0);\n"
+                "  #ifdef COMPRESS_MF_MT\n"
+                "  p->mtMode = (p->multiThread && !p->fastMode && btMode);\n"
+                "  #endif\n",
             ),
         }
         paths: dict[str, Path] = {}
@@ -664,7 +781,18 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertTrue(
                 document["network_distribution"]["rps_xps_queue_policy_verified"]
             )
-            self.assertEqual(document["userland_hardening"]["exact_source_patches"], 13)
+            self.assertEqual(document["userland_hardening"]["exact_source_patches"], 20)
+            self.assertTrue(
+                document["userland_hardening"]["ascii_hex_length_scope_verified"]
+            )
+            self.assertTrue(
+                document["userland_hardening"]["ebtables_counter_errors_propagated"]
+            )
+            self.assertTrue(
+                document["userland_hardening"][
+                    "https_renegotiation_disabled_in_context"
+                ]
+            )
             self.assertEqual(document["wireless_hardening"]["exact_source_patches"], 2)
             self.assertTrue(
                 document["wireless_hardening"]["spatial_stream_index_validated"]
@@ -675,6 +803,12 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertEqual(document["host_build_hardening"]["exact_source_patches"], 7)
             self.assertTrue(
                 document["host_build_hardening"]["generated_output_close_checked"]
+            )
+            self.assertEqual(document["image_build_hardening"]["exact_source_patches"], 10)
+            self.assertTrue(
+                document["image_build_hardening"][
+                    "lzma_string_search_checks_all_characters"
+                ]
             )
             self.assertTrue(document["watchdog"]["default_enabled"])
 
@@ -701,6 +835,21 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertNotIn('ipsec != ""', relay)
             self.assertIn("snprintf(interfaces, sizeof(interfaces)", relay)
             self.assertIn("Interface filter is too long", relay)
+            self.assertIn("#ifndef HAVE_FORK", relay)
+            http_ascii = paths["http_ascii"].read_text(encoding="utf-8")
+            self.assertIn("if ((len >= 2) && (", http_ascii)
+            self.assertIn("the_char == '.'))", http_ascii)
+            https = paths["https"].read_text(encoding="utf-8")
+            self.assertIn("ssl_options |= SSL_OP_NO_RENEGOTIATION", https)
+            self.assertIn("#if OPENSSL_VERSION_NUMBER < 0x10101000L", https)
+            self.assertNotIn("SSL_set_options(ssl, SSL_OP_NO_RENEGOTIATION)", https)
+            ebtables_communication = paths["ebtables_communication"].read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("if (fclose(file) != 0 && ret == 0)", ebtables_communication)
+            self.assertIn("return ret;", ebtables_communication)
+            ebtables = paths["ebtables"].read_text(encoding="utf-8")
+            self.assertIn("if (ebt_errormsg[0] != '\\0')", ebtables)
             self.assertIn(
                 "if (!*pass) usage();",
                 paths["lanauth"].read_text(encoding="utf-8"),
@@ -730,9 +879,26 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertIn("if (write(fd, text, len) != len)", busybox_mconf)
             busybox_usage = paths["busybox_usage"].read_text(encoding="utf-8")
             self.assertIn("!= (ssize_t)len", busybox_usage)
+            busybox_usage_pod = paths["busybox_usage_pod"].read_text(encoding="utf-8")
+            self.assertIn('printf("%s", usage_array[i].aname)', busybox_usage_pod)
             busybox_tables = paths["busybox_tables"].read_text(encoding="utf-8")
             self.assertIn("&& ferror(fp)", busybox_tables)
             self.assertIn("if (fclose(stdout) != 0)", busybox_tables)
+            lzma_com = paths["lzma_com"].read_text(encoding="utf-8")
+            self.assertIn("if (--__m_RefCount != 0) {", lzma_com)
+            lzma_string = paths["lzma_string"].read_text(encoding="utf-8")
+            self.assertIn("    }\n    return -1;", lzma_string)
+            lzma_encoder = paths["lzma_encoder"].read_text(encoding="utf-8")
+            self.assertIn("return E_INVALIDARG;\n        props.fb", lzma_encoder)
+            self.assertIn("return E_INVALIDARG;\n        break;", lzma_encoder)
+            self.assertNotIn("return E_INVALIDARG; props", lzma_encoder)
+            lzma_bench = paths["lzma_bench"].read_text(encoding="utf-8")
+            self.assertEqual(lzma_bench.count('fprintf(f, "%s", kSep)'), 3)
+            lzma_alone = paths["lzma_alone"].read_text(encoding="utf-8")
+            self.assertIn('fprintf(stderr, "%s", kWriteError)', lzma_alone)
+            self.assertIn('fprintf(stderr, "%s", kReadError)', lzma_alone)
+            lzma_enc = paths["lzma_enc"].read_text(encoding="utf-8")
+            self.assertIn("Bool btMode = (p->matchFinderBase.btMode != 0);", lzma_enc)
 
     def test_prepare_source_applies_the_xz_gettext_compatibility_fix(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -844,8 +1010,8 @@ class BuildWarningPolicyTests(unittest.TestCase):
             result, report = self.run_warning_verification(
                 directory,
                 "configure.ac: warning: The macro `AC_TRY_COMPILE' is obsolete.\n"
-                "legacy.cpp:42: warning: this 'if' clause does not guard... "
-                "[-Wmisleading-indentation]\n",
+                "wireless.c:42: warning: inlining failed in call to 'scan': "
+                "call is unlikely and code size would grow [-Winline]\n",
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -870,7 +1036,18 @@ class BuildWarningPolicyTests(unittest.TestCase):
                 "state.c: warning: this statement may fall through [-Wimplicit-fallthrough=]\n"
                 "queue.c: warning: value may be used uninitialized [-Wmaybe-uninitialized]\n"
                 "generator.c: warning: ignoring return value of 'write' declared with "
-                "attribute 'warn_unused_result' [-Wunused-result]\n",
+                "attribute 'warn_unused_result' [-Wunused-result]\n"
+                "usage.c: warning: format not a string literal and no format arguments "
+                "[-Wformat-security]\n"
+                "string.cc: warning: this 'for' clause does not guard... "
+                "[-Wmisleading-indentation]\n"
+                "encoder.c: warning: variable 'mode' set but not used "
+                "[-Wunused-but-set-variable]\n"
+                "https.c: warning: passing argument 1 discards 'const' qualifier "
+                "[-Wdiscarded-qualifiers]\n"
+                "parser.c: warning: suggest parentheses around '&&' within '||' "
+                "[-Wparentheses]\n"
+                'relay.c: warning: "HAVE_FORK" redefined\n',
             )
 
             self.assertNotEqual(result.returncode, 0)
@@ -881,6 +1058,12 @@ class BuildWarningPolicyTests(unittest.TestCase):
             self.assertIn("implicit-fallthrough=1", result.stderr)
             self.assertIn("uninitialized=1", result.stderr)
             self.assertIn("ignored-result=1", result.stderr)
+            self.assertIn("format-security=1", result.stderr)
+            self.assertIn("misleading-indentation=1", result.stderr)
+            self.assertIn("unused-but-set-variable=1", result.stderr)
+            self.assertIn("discarded-qualifiers=1", result.stderr)
+            self.assertIn("ambiguous-parentheses=1", result.stderr)
+            self.assertIn("macro-redefinition=1", result.stderr)
             self.assertFalse(report.exists())
 
 
