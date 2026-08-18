@@ -37,6 +37,16 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn('REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}', build)
         self.assertIn("Provisioned firmware must not be published from a public repository", build)
 
+    def test_ci_dependency_installation_is_bounded(self) -> None:
+        build = (WORKFLOWS / "build.yml").read_text(encoding="utf-8")
+        self.assertIn("run: shellcheck --version", build)
+        self.assertNotIn("install --yes --no-install-recommends shellcheck", build)
+        self.assertIn("timeout-minutes: 10", build)
+        self.assertIn("Acquire::Retries=3", build)
+        self.assertIn("Acquire::http::Timeout=30", build)
+        self.assertIn("Acquire::https::Timeout=30", build)
+        self.assertIn("Dpkg::Lock::Timeout=60", build)
+
     def test_firmware_policy_selects_au_and_verifies_the_cpu_variant(self) -> None:
         profile = (REPOSITORY / "config" / "rm2100-3.4.config").read_text(encoding="utf-8")
         build_script = (REPOSITORY / "scripts" / "build-firmware.sh").read_text(
