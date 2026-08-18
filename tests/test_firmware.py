@@ -542,7 +542,7 @@ class SourcePreparationTests(unittest.TestCase):
                 makefile.read_text(encoding="utf-8"),
             )
 
-    def test_prepare_source_makes_the_image_timestamp_reproducible(self) -> None:
+    def test_prepare_source_hardens_the_image_builder(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             source, admin_password, wifi_password = self.create_base_source(directory)
@@ -551,7 +551,11 @@ class SourcePreparationTests(unittest.TestCase):
             mkimage.write_text(
                 "hdr->ih_magic = htonl(IH_MAGIC);\n"
                 "hdr->ih_time  = htonl(sbuf.st_mtime);\n"
-                "hdr->ih_size  = htonl(sbuf.st_size);\n",
+                "hdr->ih_size  = htonl(sbuf.st_size);\n"
+                '\t\t\t\tsscanf(argv[1], "%d.%d", &tail_pre.kernel.major, '
+                "&tail_pre.kernel.minor);\n"
+                '\t\t\t\tsscanf(argv[2], "%d.%d%c", &tail_pre.fs.major, '
+                "&tail_pre.fs.minor, &tail_pre.sub_fs);   \n",
                 encoding="utf-8",
             )
 
@@ -561,6 +565,12 @@ class SourcePreparationTests(unittest.TestCase):
             rendered_mkimage = mkimage.read_text(encoding="utf-8")
             self.assertIn('getenv("SOURCE_DATE_EPOCH")', rendered_mkimage)
             self.assertIn('strtoul(getenv("SOURCE_DATE_EPOCH")', rendered_mkimage)
+            self.assertIn('sscanf(argv[1], "%hhu.%hhu"', rendered_mkimage)
+            self.assertIn('sscanf(argv[2], "%hhu.%hhu%c"', rendered_mkimage)
+            self.assertIn("!= 2", rendered_mkimage)
+            self.assertIn("< 2", rendered_mkimage)
+            self.assertNotIn('sscanf(argv[1], "%d.%d"', rendered_mkimage)
+            self.assertNotIn('sscanf(argv[2], "%d.%d%c"', rendered_mkimage)
 
     def test_prepare_source_requires_the_locked_openssl_archive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

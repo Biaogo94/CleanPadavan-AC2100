@@ -23,6 +23,10 @@ Hardware NAT remains disabled by default for the MT7615 path, matching upstream 
 - The 2.4 GHz driver retains 20/40 MHz, WMM, aggregation and the board's 2x2 layout.
 - The 128 MiB memory policy and 16,384-connection default are unchanged. Raising conntrack limits or adding swap would reduce stability margin under sustained traffic.
 
+## Image builder correctness
+
+The locked upstream `mkimage` host tool originally parsed dotted kernel and filesystem versions with `%d` directly into `uint8_t` fields. That makes `sscanf` write an `int` through a one-byte pointer and can overwrite adjacent uImage tail fields. Source preparation changes the conversions to `%hhu` and checks their return counts. The resulting image is still independently checked for header CRC, data CRC, Linux 3.4, filesystem 3.9 and RM2100 identity.
+
 ## Measurement contract
 
 Qualification compares the same immutable bundle and test setup with SFE disabled and SFE mode 1. Record bidirectional TCP throughput, UDP loss, CPU load, free memory, temperature, SFE exceptions and interface errors. Promotion requires at least 900 Mbit/s wired TCP with SFE mode 1, no unexplained regression above 5%, no persistent memory growth, and no crash or packet-loss excursion during the 72-hour soak.

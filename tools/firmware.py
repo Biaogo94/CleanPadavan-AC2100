@@ -334,6 +334,22 @@ def prepare_source(
             '? strtoul(getenv("SOURCE_DATE_EPOCH"), NULL, 10) : sbuf.st_mtime);',
             "mkimage timestamp assignment",
         )
+        mkimage_content = replace_exact_once(
+            mkimage_content,
+            '\t\t\t\tsscanf(argv[1], "%d.%d", &tail_pre.kernel.major, '
+            "&tail_pre.kernel.minor);",
+            '\t\t\t\tif (sscanf(argv[1], "%hhu.%hhu", &tail_pre.kernel.major, '
+            "&tail_pre.kernel.minor) != 2)\n\t\t\t\t\tusage ();",
+            "mkimage kernel version parser",
+        )
+        mkimage_content = replace_exact_once(
+            mkimage_content,
+            '\t\t\t\tsscanf(argv[2], "%d.%d%c", &tail_pre.fs.major, '
+            "&tail_pre.fs.minor, &tail_pre.sub_fs);   ",
+            '\t\t\t\tif (sscanf(argv[2], "%hhu.%hhu%c", &tail_pre.fs.major, '
+            "&tail_pre.fs.minor, &tail_pre.sub_fs) < 2)\n\t\t\t\t\tusage ();",
+            "mkimage filesystem version parser",
+        )
         mkimage.write_text(mkimage_content, encoding="utf-8", newline="\n")
 
     openssl_makefile = source / "trunk" / "libs" / "libssl" / "Makefile"
