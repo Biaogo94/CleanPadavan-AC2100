@@ -27,7 +27,7 @@
 
 ## GitHub Actions 构建
 
-运行 **Build RM2100 Padavan 3.4**，在 `cpu_frequency` 选择 `bootloader`、`800`、`900` 或 `1000`。普通构建保持 `publish=false`，完成后下载 `rm2100-3.4-cpu-<mode>-<run>-<attempt>` Firmware Bundle；镜像文件名会明确标记所选模式。公开仓库可直接构建和发布，不需要配置密码 Secrets。
+在 Actions 中手动运行 **Build RM2100 Padavan 3.4**，在 `cpu_frequency` 选择 `bootloader`、`800`、`900` 或 `1000`。`release_version` 可留空，此时自动使用 `YYYYMMDD.<run_number>`；也可手动填写同格式版本号。源码校验、两次完整构建、镜像校验和可复现性比较全部成功后，workflow 会自动创建对应 GitHub Release，同时保留 `rm2100-3.4-cpu-<mode>-<run>-<attempt>` Artifact。PR、push 和定时任务只构建 Artifact，不发布 Release。公开仓库不需要配置密码 Secrets。
 
 锁定的 3.4 源码会为三个固定频率设置完整 PLL FBDIV 字段，构建器同时验证 Firmware Profile、源码策略和最终内核配置。`bootloader` 是默认且最保守的选择；`1000` 属于可选超频档，可能增加功耗、温度和个体设备不稳定风险。`AU` 地区码不会绕过驱动的法规限制或 EEPROM / SingleSKU 校准；仅应在符合当地法规的部署中使用。
 

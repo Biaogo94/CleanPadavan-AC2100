@@ -20,10 +20,10 @@ A successful GitHub Actions run creates a software-verified Firmware Bundle. Mac
 
 ## Release procedure
 
-1. Build the selected `bootloader`, `800`, `900` or `1000` mode with `publish=false` and retain the Actions run URL.
-2. Download the exact Firmware Bundle and verify `sha256sum --check SHA256SUMS`.
-3. Confirm `manifest.json`, `performance-profile.json`, `runtime-policy.json` and `reproducibility-policy.json` report the requested mode and successful gates.
-4. Re-run the workflow with `publish=true`, a unique release version and approval from the GitHub `production` Environment.
+1. Manually run the workflow for the selected `bootloader`, `800`, `900` or `1000` mode. Leave `release_version` empty for an automatic `YYYYMMDD.<run_number>` version, or enter a unique version in that format.
+2. Wait for source validation, both clean builds, image verification and byte-for-byte reproducibility comparison to pass.
+3. The dependent Release job reverifies the exact Artifact, attests the firmware image and creates an immutable GitHub Release. PR, push and scheduled runs never publish.
+4. Download the released Firmware Bundle and verify `sha256sum --check SHA256SUMS` before deployment.
 5. Publish the default address and credentials with the release, and instruct users to change both passwords immediately after first login.
 
 `1000 MHz` is an optional overclock. Publishing it does not assert that every RM2100 unit has adequate voltage or thermal margin. `bootloader` remains the default release mode.

@@ -7,13 +7,8 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      publish:
-        description: Publish the verified Firmware Bundle
-        required: true
-        default: false
-        type: boolean
       release_version:
-        description: Release version such as 20260818.1 (required when publishing)
+        description: Optional version such as 20260818.1 (auto-generated when empty)
         required: false
         type: string
       cpu_frequency:
@@ -124,7 +119,7 @@ jobs:
 
   release:
     needs: build
-    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     environment: production
@@ -169,6 +164,9 @@ jobs:
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -Eeuo pipefail
+          if [[ -z "$RELEASE_VERSION" ]]; then
+            RELEASE_VERSION="$(date --utc +%Y%m%d).${GITHUB_RUN_NUMBER}"
+          fi
           [[ "$RELEASE_VERSION" =~ ^[0-9]{8}\.[0-9]+$ ]] || {
             echo "::error::release_version must match YYYYMMDD.N"
             exit 1

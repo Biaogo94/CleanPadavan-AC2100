@@ -38,6 +38,14 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("environment: production", build)
         self.assertIn("Default WebUI credentials: admin / admin", build)
         self.assertIn("default Wi-Fi password: 1234567890", build)
+        self.assertIn("if: github.event_name == 'workflow_dispatch'", build)
+        self.assertNotIn("inputs.publish", build)
+        self.assertNotIn("\n      publish:\n", build)
+        self.assertIn(
+            'RELEASE_VERSION="$(date --utc +%Y%m%d).${GITHUB_RUN_NUMBER}"',
+            build,
+        )
+        self.assertIn('gh release create "$tag" dist/*', build)
         self.assertNotIn("Reject public credentialed releases", build)
         self.assertNotIn("Provisioned firmware must not be published from a public repository", build)
 
