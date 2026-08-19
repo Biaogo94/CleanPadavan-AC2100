@@ -171,6 +171,21 @@ collect_thermal() {
   fi
 }
 
+collect_process_status() {
+  found=0
+  for status_file in /proc/[0-9]*/status; do
+    if [ -r "$status_file" ]; then
+      awk '/^(Name|State|Pid|PPid|VmPeak|VmSize|VmRSS|Threads):/ { print }' \
+        "$status_file"
+      printf '\n'
+      found=1
+    fi
+  done
+  if [ "$found" -eq 0 ]; then
+    printf '%s\n' "no readable process status found"
+  fi
+}
+
 first_temperature() {
   for sensor in /sys/class/thermal/thermal_zone*/temp \
     /proc/temperature /proc/rt2880/temperature /proc/mt7621/temperature \
@@ -188,13 +203,16 @@ first_temperature() {
 
 collect_events() {
   pattern='sfe|fast_classifier|watchdog|oom|out of memory|panic|thermal|temperature|mt7615|mt76x3|error|failed'
+  sensitive='pass(word|wd)?|pre.?shared|psk|secret|token|private.?key'
   if command -v dmesg >/dev/null 2>&1; then
     printf '%s\n' "[dmesg]"
-    dmesg 2>/dev/null | grep -Ei "$pattern" | tail -n 500 || true
+    dmesg 2>/dev/null | grep -Ei "$pattern" |
+      grep -Eiv "$sensitive" | tail -n 500 || true
   fi
   if command -v logread >/dev/null 2>&1; then
     printf '%s\n' "[logread]"
-    logread 2>/dev/null | grep -Ei "$pattern" | tail -n 500 || true
+    logread 2>/dev/null | grep -Ei "$pattern" |
+      grep -Eiv "$sensitive" | tail -n 500 || true
   fi
 }
 
@@ -260,7 +278,7 @@ collect_snapshot() {
   capture_if_available uname.txt uname -a
   capture_if_available date-utc.txt date -u
   capture_if_available uptime.txt uptime
-  capture_if_available processes.txt ps w
+  capture process-status.txt collect_process_status
   capture_if_available filesystems.txt df -k
   capture_if_available mounts.txt mount
   capture_if_available interfaces.txt ifconfig -a
