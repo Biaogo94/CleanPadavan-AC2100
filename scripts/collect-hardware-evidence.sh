@@ -286,15 +286,26 @@ collect_snapshot() {
 seal_evidence() {
   if ! command -v sha256sum >/dev/null 2>&1; then
     note "command unavailable: sha256sum"
-    return 0
+    return 1
   fi
-  (
+  if ! command -v mktemp >/dev/null 2>&1; then
+    note "command unavailable: mktemp"
+    return 1
+  fi
+  checksum_tmp=$(mktemp "${TMPDIR:-/tmp}/rm2100-sha256.XXXXXX")
+  if (
     cd "$OUTPUT_DIR" || exit 1
     find . -type f ! -name SHA256SUMS | LC_ALL=C sort |
       while IFS= read -r evidence_file; do
         sha256sum "$evidence_file"
-      done >SHA256SUMS
-  )
+      done >"$checksum_tmp"
+  ); then
+    mv "$checksum_tmp" "$OUTPUT_DIR/SHA256SUMS"
+  else
+    result=$?
+    rm -f "$checksum_tmp"
+    return "$result"
+  fi
 }
 
 note "collector_version=$COLLECTOR_VERSION"
