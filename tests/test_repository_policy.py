@@ -86,6 +86,10 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("CONFIG_FIRMWARE_CPU_1000MHZ=n", profile)
         self.assertIn('CPU_FREQUENCY="${CPU_FREQUENCY:-bootloader}"', build_script)
         self.assertIn("inputs.cpu_frequency || 'bootloader'", workflow)
+        self.assertIn(
+            "group: rm2100-3.4-${{ github.ref }}-${{ inputs.cpu_frequency || 'bootloader' }}",
+            workflow,
+        )
         self.assertIn("configure-profile", build_script)
         self.assertIn("verify-source-policy", build_script)
         self.assertIn("verify-build-log", build_script)

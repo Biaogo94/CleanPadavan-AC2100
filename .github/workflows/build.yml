@@ -36,7 +36,7 @@ env:
   CPU_FREQUENCY: ${{ inputs.cpu_frequency || 'bootloader' }}
 
 concurrency:
-  group: rm2100-3.4-${{ github.ref }}
+  group: rm2100-3.4-${{ github.ref }}-${{ inputs.cpu_frequency || 'bootloader' }}
   cancel-in-progress: false
 
 jobs:
