@@ -1728,6 +1728,7 @@ def verify_image(
     if failed:
         raise FirmwareError(f"firmware verification failed: {', '.join(failed)}")
 
+    cpu_frequency = cpu_frequency_from_profile(profile_values)
     document: dict[str, object] = {
         "schema": 1,
         "device": "RM2100",
@@ -1737,9 +1738,9 @@ def verify_image(
         "builder": {"commit": builder_commit},
         "profile": {"sha256": sha256_file(profile)},
         "cpu": {
-            "selection": cpu_frequency_from_profile(profile_values),
+            "selection": cpu_frequency,
             "forced_frequency_mhz": (
-                900 if cpu_frequency_from_profile(profile_values) == "900" else None
+                None if cpu_frequency == "bootloader" else int(cpu_frequency)
             ),
         },
         "wireless": {

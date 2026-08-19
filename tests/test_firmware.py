@@ -1516,38 +1516,58 @@ class FirmwareVerificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             image = directory / "RM2100_3.4.test.trx"
-            manifest = directory / "manifest.json"
             self.write_firmware(image)
+            for frequency in ("bootloader", "800", "900", "1000"):
+                with self.subTest(frequency=frequency):
+                    profile = directory / f"profile-{frequency}.config"
+                    manifest = directory / f"manifest-{frequency}.json"
+                    configure = subprocess.run(
+                        [
+                            sys.executable,
+                            str(FIRMWARE_TOOL),
+                            "configure-profile",
+                            str(REPOSITORY / "config" / "rm2100-3.4.config"),
+                            str(profile),
+                            "--cpu-frequency",
+                            frequency,
+                        ],
+                        cwd=REPOSITORY,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(configure.returncode, 0, configure.stderr)
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            str(FIRMWARE_TOOL),
+                            "verify-image",
+                            str(image),
+                            "--manifest",
+                            str(manifest),
+                            "--profile",
+                            str(profile),
+                            "--source-commit",
+                            "23387b278a7cf728748af606760758f5d59d1451",
+                            "--builder-commit",
+                            "0123456789abcdef0123456789abcdef01234567",
+                            "--expected-timestamp",
+                            "1623679775",
+                        ],
+                        cwd=REPOSITORY,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
 
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(FIRMWARE_TOOL),
-                    "verify-image",
-                    str(image),
-                    "--manifest",
-                    str(manifest),
-                    "--profile",
-                    str(REPOSITORY / "config" / "rm2100-3.4.config"),
-                    "--source-commit",
-                    "23387b278a7cf728748af606760758f5d59d1451",
-                    "--builder-commit",
-                    "0123456789abcdef0123456789abcdef01234567",
-                    "--expected-timestamp",
-                    "1623679775",
-                ],
-                cwd=REPOSITORY,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            self.assertEqual(result.returncode, 0, result.stderr)
-            document = json.loads(manifest.read_text(encoding="utf-8"))
-            self.assertEqual(document["device"], "RM2100")
-            self.assertEqual(document["kernel"], "3.4")
-            self.assertEqual(document["cpu"]["selection"], "bootloader")
-            self.assertEqual(document["wireless"]["country_code"], "AU")
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    document = json.loads(manifest.read_text(encoding="utf-8"))
+                    self.assertEqual(document["device"], "RM2100")
+                    self.assertEqual(document["kernel"], "3.4")
+                    self.assertEqual(document["cpu"]["selection"], frequency)
+                    expected = None if frequency == "bootloader" else int(frequency)
+                    self.assertEqual(document["cpu"]["forced_frequency_mhz"], expected)
+                    self.assertEqual(document["wireless"]["country_code"], "AU")
             self.assertEqual(document["source"]["commit"], "23387b278a7cf728748af606760758f5d59d1451")
             self.assertEqual(document["artifact"]["size"], image.stat().st_size)
             self.assertEqual(len(document["artifact"]["sha256"]), 64)
