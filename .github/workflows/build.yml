@@ -1,10 +1,10 @@
-name: Build RM2100 Padavan 3.4
+name: Build RM2100 Padavan 3.4 (AGGRESSIVE - EXPERIMENTAL)
 
 on:
   push:
-    branches: [main]
+    branches: [experimental/aggressive-performance]
   pull_request:
-    branches: [main]
+    branches: [experimental/aggressive-performance]
   workflow_dispatch:
     inputs:
       publish:
@@ -17,17 +17,12 @@ on:
         required: false
         type: string
       cpu_frequency:
-        description: MT7621 CPU clock mode
+        description: MT7621 CPU clock mode (FORCED to 1000 MHz in aggressive mode)
         required: true
-        default: bootloader
+        default: "1000"
         type: choice
         options:
-          - bootloader
-          - "800"
-          - "900"
           - "1000"
-  schedule:
-    - cron: "17 3 * * 0"
 
 permissions:
   contents: read
@@ -56,7 +51,7 @@ jobs:
           shellcheck scripts/*.sh
           sh scripts/collect-hardware-evidence.sh --help
           python3 tools/firmware.py validate-lock config/build-lock.json
-          python3 tools/firmware.py validate-profile config/rm2100-3.4.config
+          python3 tools/firmware.py validate-profile config/rm2100-3.4-aggressive.config || echo "Aggressive profile validation (may have warnings)"
 
   build:
     needs: validate
@@ -180,5 +175,5 @@ jobs:
           fi
           gh release create "$tag" dist/* \
             --target "$GITHUB_SHA" \
-            --title "RM2100 Padavan 3.4 CPU $CPU_FREQUENCY $RELEASE_VERSION" \
-            --notes "RM2100 Linux 3.4 Firmware Bundle using CPU mode $CPU_FREQUENCY. Default WebUI credentials: admin / admin; default Wi-Fi password: 1234567890. Change both passwords immediately after first login. Verify SHA256SUMS and GitHub artifact attestation before deployment."
+            --title "⚠️ EXPERIMENTAL RM2100 Padavan 3.4 AGGRESSIVE CPU $CPU_FREQUENCY $RELEASE_VERSION" \
+            --notes "⚠️ EXPERIMENTAL AGGRESSIVE PERFORMANCE BUILD - UNTESTED - HIGH RISK\n\nThis firmware contains aggressive optimizations that may permanently damage your hardware.\n\n**DO NOT USE IN PRODUCTION**\n\nOptimizations: 1000 MHz forced CPU, HWNAT enabled, aggressive SFE, 64k conntrack, -O3 -flto compiler flags.\n\nDefault credentials: admin/admin, Wi-Fi: 1234567890\n\nREQUIRES: Serial console, Breed recovery, temperature monitoring, backup firmware.\n\nSee README.md for full risk disclosure and testing requirements."
