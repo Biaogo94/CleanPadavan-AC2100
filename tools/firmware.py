@@ -532,6 +532,12 @@ IMAGE_BUILD_SOURCE_PATCHES = (
         "SquashFS superblock timestamp",
     ),
     (
+        "trunk/vendors/Ralink/Makefile",
+        "$(ROOTDIR)/tools/mksquashfs_xz/mksquashfs $(ROMFSDIR) $(RAMDISK) -all-root -no-exports -noappend -nopad -noI -no-xattrs",
+        "$(ROOTDIR)/tools/mksquashfs_xz/mksquashfs $(ROMFSDIR) $(RAMDISK) -all-root -no-exports -noappend -nopad -noI -no-xattrs -processors 1",
+        "deterministic SquashFS processor count",
+    ),
+    (
         "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/confdata.c",
         "\tsym = sym_lookup(\"KERNELVERSION\", 0);\n"
         "\tsym_calc_value(sym);\n"

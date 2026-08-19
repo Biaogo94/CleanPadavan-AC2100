@@ -472,6 +472,11 @@ class SourcePreparationTests(unittest.TestCase):
                 "\t\tbuf.st_ino = pseudo_ino ++;\n"
                 "\tsBlk.mkfs_time = time(NULL);\n",
             ),
+            "ralink_makefile": (
+                "trunk/vendors/Ralink/Makefile",
+                "$(ROOTDIR)/tools/mksquashfs_xz/mksquashfs $(ROMFSDIR) $(RAMDISK) "
+                "-all-root -no-exports -noappend -nopad -noI -no-xattrs\n",
+            ),
             "busybox_mconf": (
                 "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/mconf.c",
                 "\tpipe(pipefd);\n"
@@ -837,7 +842,7 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertTrue(
                 document["host_build_hardening"]["generated_output_close_checked"]
             )
-            self.assertEqual(document["image_build_hardening"]["exact_source_patches"], 17)
+            self.assertEqual(document["image_build_hardening"]["exact_source_patches"], 18)
             self.assertTrue(
                 document["image_build_hardening"][
                     "busybox_timestamp_from_source_epoch"
@@ -976,6 +981,13 @@ class SourcePreparationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             source, admin_password, wifi_password = self.create_base_source(directory)
+            ralink_makefile = source / "trunk" / "vendors" / "Ralink" / "Makefile"
+            ralink_makefile.parent.mkdir(parents=True)
+            ralink_makefile.write_text(
+                "$(ROOTDIR)/tools/mksquashfs_xz/mksquashfs $(ROMFSDIR) $(RAMDISK) "
+                "-all-root -no-exports -noappend -nopad -noI -no-xattrs\n",
+                encoding="utf-8",
+            )
             mkimage = source / "trunk" / "tools" / "mkimage" / "mkimage.c"
             mkimage.parent.mkdir(parents=True)
             mkimage.write_text(
@@ -1001,6 +1013,7 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertIn("< 2", rendered_mkimage)
             self.assertNotIn('sscanf(argv[1], "%d.%d"', rendered_mkimage)
             self.assertNotIn('sscanf(argv[2], "%d.%d%c"', rendered_mkimage)
+            self.assertIn("-no-xattrs -processors 1", ralink_makefile.read_text(encoding="utf-8"))
 
     def test_prepare_source_requires_the_locked_openssl_archive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
