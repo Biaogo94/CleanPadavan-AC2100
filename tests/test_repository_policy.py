@@ -72,6 +72,8 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("export KBUILD_BUILD_VERSION=1", build_script)
         self.assertIn("verify-reproducibility", workflow)
         self.assertIn("firmware-rebuild", workflow)
+        self.assertIn("BUILD_ROOT: ${{ runner.temp }}/cleanpadavan-build", workflow)
+        self.assertIn('rm -rf -- "$RUNNER_TEMP/cleanpadavan-build"', workflow)
         self.assertIn("cpu-900mhz", build_script)
 
 

@@ -126,10 +126,12 @@ jobs:
         env:
           ADMIN_PASSWORD_FILE: ${{ runner.temp }}/admin-password
           WIFI_PASSWORD_FILE: ${{ runner.temp }}/wifi-password
-          BUILD_ROOT: ${{ runner.temp }}/cleanpadavan-rebuild
+          BUILD_ROOT: ${{ runner.temp }}/cleanpadavan-build
           CACHE_DIR: ${{ runner.temp }}/cleanpadavan-cache
           OUTPUT_DIR: ${{ runner.temp }}/firmware-rebuild
         run: |
+          set -Eeuo pipefail
+          rm -rf -- "$RUNNER_TEMP/cleanpadavan-build"
           bash scripts/build-firmware.sh
           python3 tools/firmware.py verify-reproducibility \
             "$RUNNER_TEMP/firmware-bundle" \
