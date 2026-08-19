@@ -22,6 +22,8 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("scripts/build-firmware.sh", contents)
         self.assertIn("cpu_frequency:", contents)
         self.assertIn("CPU_FREQUENCY:", contents)
+        for frequency in ("800", "900", "1000"):
+            self.assertIn(f'- "{frequency}"', contents)
 
         uses_lines = re.findall(r"^\s*-?\s*uses:\s*([^\s#]+)", contents, re.MULTILINE)
         self.assertTrue(uses_lines)
@@ -34,8 +36,10 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("release:\n", build)
         self.assertRegex(build, r"release:[\s\S]+?permissions:\n\s+contents: write")
         self.assertIn("environment: production", build)
-        self.assertIn('REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}', build)
-        self.assertIn("Provisioned firmware must not be published from a public repository", build)
+        self.assertIn("Default WebUI credentials: admin / admin", build)
+        self.assertIn("default Wi-Fi password: 1234567890", build)
+        self.assertNotIn("Reject public credentialed releases", build)
+        self.assertNotIn("Provisioned firmware must not be published from a public repository", build)
 
     def test_ci_dependency_installation_is_bounded(self) -> None:
         build = (WORKFLOWS / "build.yml").read_text(encoding="utf-8")
@@ -78,6 +82,8 @@ class WorkflowPolicyTests(unittest.TestCase):
         workflow = (WORKFLOWS / "build.yml").read_text(encoding="utf-8")
         self.assertIn('CONFIG_FIRMWARE_WLAN_COUNTRY_CODE="AU"', profile)
         self.assertIn("CONFIG_FIRMWARE_CPU_900MHZ=n", profile)
+        self.assertIn("CONFIG_FIRMWARE_CPU_800MHZ=n", profile)
+        self.assertIn("CONFIG_FIRMWARE_CPU_1000MHZ=n", profile)
         self.assertIn('CPU_FREQUENCY="${CPU_FREQUENCY:-bootloader}"', build_script)
         self.assertIn("inputs.cpu_frequency || 'bootloader'", workflow)
         self.assertIn("configure-profile", build_script)
@@ -95,7 +101,27 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("firmware-rebuild", workflow)
         self.assertIn("BUILD_ROOT: ${{ runner.temp }}/cleanpadavan-build", workflow)
         self.assertIn('rm -rf -- "$RUNNER_TEMP/cleanpadavan-build"', workflow)
-        self.assertIn("cpu-900mhz", build_script)
+        self.assertIn("800|900|1000)", build_script)
+        self.assertIn('cpu_variant="cpu-${CPU_FREQUENCY}mhz"', build_script)
+
+    def test_public_defaults_are_used_without_secret_or_random_provisioning(self) -> None:
+        build_script = (REPOSITORY / "scripts" / "build-firmware.sh").read_text(
+            encoding="utf-8"
+        )
+        workflow = (WORKFLOWS / "build.yml").read_text(encoding="utf-8")
+        admin = (REPOSITORY / "config" / "default-admin-password").read_text(
+            encoding="utf-8"
+        ).strip()
+        wifi = (REPOSITORY / "config" / "default-wifi-password").read_text(
+            encoding="utf-8"
+        ).strip()
+        self.assertEqual(admin, "admin")
+        self.assertEqual(wifi, "1234567890")
+        self.assertIn("config/default-admin-password", build_script)
+        self.assertIn("config/default-wifi-password", build_script)
+        self.assertNotIn("secrets.FIRMWARE_ADMIN_PASSWORD", workflow)
+        self.assertNotIn("secrets.FIRMWARE_WIFI_PASSWORD", workflow)
+        self.assertNotIn("Ephemeral-", workflow)
 
 
 if __name__ == "__main__":

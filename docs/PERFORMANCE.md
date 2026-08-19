@@ -1,12 +1,13 @@
 # Performance and stability design
 
-This project optimizes the locked RM2100 Linux 3.4 source without treating unmeasured tuning as an improvement. Every source change must preserve the bootloader-clock path, compile in both CPU modes, and have a hardware acceptance criterion.
+This project optimizes the locked RM2100 Linux 3.4 source without treating unmeasured tuning as an improvement. Every source change must preserve the bootloader-clock path and compile in all four CPU modes. Automated releases do not claim hardware qualification.
 
 ## CPU and scheduler
 
-- The safe default is the clock selected by the device bootloader. `900` is an explicit build option that enables upstream `CONFIG_RALINK_MT7621_PLL900`.
+- The safe default is the clock selected by the device bootloader. Explicit build options force `800`, `900` or `1000 MHz` through mutually exclusive Linux 3.4 kernel symbols.
+- Source preparation extends the upstream 900 MHz-only implementation and programs the complete 11-bit PLL field. The target FBDIV is calculated from the detected 20/25 MHz PLL base, so stale high bits from the bootloader cannot silently change the requested frequency.
 - The final kernel must have four logical CPUs, SMP, `HZ=250` and non-preemptible kernel scheduling. The build rejects any drift.
-- CPU sleep remains disabled. The 900 MHz image cannot be promoted from build evidence alone; it needs cold-boot, thermal and 72-hour mixed-load qualification.
+- CPU sleep remains disabled. `1000 MHz` is an optional overclock, not the default; it may increase power, temperature and device-to-device instability. Select `bootloader` when stability margin is more important than a fixed clock.
 
 ## Packet forwarding
 
@@ -33,7 +34,7 @@ BusyBox 1.24 host generators also ignored reads, pipe creation, writes and outpu
 
 The LZMA 4.65 host library used by the image build had a mis-scoped `FindOneOf()` loop: `return -1` executed after the first character instead of after the full search. Source preparation restores the complete search, makes reference-count and property-parser control flow explicit, scopes the optional threaded match-finder value to threaded builds, and replaces non-literal diagnostic formats. These host changes do not alter compression parameters; they remove ambiguous behavior in the tool that creates the root filesystem.
 
-Reproducible output is enforced as a build property, not inferred from a fixed uImage header. Linux 3.4 receives a locked build timestamp, user, host and version; BusyBox and every SquashFS inode use the Source Lock epoch in UTC, and the legacy SquashFS 4.3 builder is forced to one processor so fragment scheduling is deterministic. CI then removes the exact build directory and performs a second clean build at the same canonical absolute path with the same provisioning inputs. This prevents compiler or generator path leakage and rejects any byte difference before sealing `reproducibility-policy.json` into the checksummed Firmware Bundle. Public runs still use fresh random credentials between separate runs, so reproducibility is proved within each run using the same protected inputs.
+Reproducible output is enforced as a build property, not inferred from a fixed uImage header. Linux 3.4 receives a locked build timestamp, user, host and version; BusyBox and every SquashFS inode use the Source Lock epoch in UTC, and the legacy SquashFS 4.3 builder is forced to one processor so fragment scheduling is deterministic. CI then removes the exact build directory and performs a second clean build at the same canonical absolute path with the same inputs. This prevents compiler or generator path leakage and rejects any byte difference before sealing `reproducibility-policy.json` into the checksummed Firmware Bundle. The documented public credentials are fixed inputs, so separate runs at the same builder revision can also be compared directly.
 
 ## Compiled userland correctness
 
@@ -41,6 +42,6 @@ The default root filesystem includes the router startup process, HTTP/HTTPS mana
 
 The complete build is captured with `LC_ALL=C` and checked after linking. `build-warning-policy.json` proves that the enforced high-risk categories and unknown warning count are zero. The gate rejects implicit function declarations, format argument type mismatches, non-literal formats, string-literal address comparisons, truncation, accidental fallthrough, ambiguous indentation or parentheses, array bounds, overflow, uninitialized or unused assigned values, ignored I/O results, discarded qualifiers, macro redefinitions, use-after-free, null dereferences, incompatible pointer conversions and missing returns. The remaining diagnostics must match one of seven audited legacy categories, each with a fail-closed upper limit. Obsolete build-system diagnostics, intentional compile-time assertions and compiler inlining decisions therefore remain visible without allowing a new warning type or an unexplained count increase.
 
-## Measurement contract
+## Optional hardware measurement
 
-Qualification compares the same immutable bundle and test setup with SFE disabled and SFE mode 1. Record bidirectional TCP throughput, UDP loss, CPU load, free memory, temperature, SFE exceptions and interface errors. Promotion requires at least 900 Mbit/s wired TCP with SFE mode 1, no unexplained regression above 5%, no persistent memory growth, and no crash or packet-loss excursion during the 72-hour soak.
+Hardware testing is not part of the automated release gate. Operators who need deployment-specific evidence can compare the same immutable bundle with SFE disabled and SFE mode 1, recording bidirectional TCP throughput, UDP loss, CPU load, free memory, temperature, SFE exceptions and interface errors. The optional worksheet in `docs/HARDWARE-QUALIFICATION.md` retains the former measurement procedure without blocking builds or releases.

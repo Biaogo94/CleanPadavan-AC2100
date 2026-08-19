@@ -1,6 +1,6 @@
 # RM2100 hardware qualification record
 
-Copy this file for each candidate. Do not edit the template to claim generic qualification.
+This worksheet is optional and is not a build or release gate. Copy it only when a deployment operator wants device-specific evidence; do not edit the template to claim generic qualification.
 
 ## Identity
 
@@ -10,7 +10,7 @@ Copy this file for each candidate. Do not edit the template to claim generic qua
 - GitHub Actions run:
 - Builder commit:
 - Upstream commit:
-- CPU mode (`900` or `bootloader`):
+- CPU mode (`bootloader`, `800`, `900` or `1000`):
 - Observed CPU clock after boot:
 - SFE mode / `fast_classifier` loaded:
 - Wi-Fi country code shown by both radios:
@@ -85,7 +85,7 @@ Use the same client, server, cables, channel, distance and iperf3 parameters as 
 | Observed CPU clock | | | |
 | Peak temperature during soak | | | |
 
-Pass criteria: SFE mode 1 wired TCP is at least 900 Mbit/s, packet loss is not worse than baseline, and no measured result regresses by more than 5% without an accepted explanation. The 900 MHz CPU image additionally needs a documented temperature margin over the bootloader-clock image; throughput alone is not approval.
+Suggested pass criteria: SFE mode 1 wired TCP is at least 900 Mbit/s, packet loss is not worse than baseline, and no measured result regresses by more than 5% without an accepted explanation. Every forced-frequency image should record its temperature margin against the bootloader-clock image; this is especially important for the optional 1000 MHz overclock.
 
 ## Decision
 

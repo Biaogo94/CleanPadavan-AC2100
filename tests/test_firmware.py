@@ -55,7 +55,9 @@ class ProfilePolicyTests(unittest.TestCase):
                     "CONFIG_FIRMWARE_WIFI2_DRIVER=4.1",
                     "CONFIG_FIRMWARE_WIFI5_DRIVER=5.0.5.1",
                     'CONFIG_FIRMWARE_WLAN_COUNTRY_CODE="AU"',
+                    "CONFIG_FIRMWARE_CPU_800MHZ=n",
                     "CONFIG_FIRMWARE_CPU_900MHZ=n",
+                    "CONFIG_FIRMWARE_CPU_1000MHZ=n",
                     "CONFIG_FIRMWARE_INCLUDE_SFE=y",
                     "CONFIG_FIRMWARE_ENABLE_IPV6=y",
                     "CONFIG_FIRMWARE_INCLUDE_IPSET=y",
@@ -151,12 +153,33 @@ class ProfilePolicyTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_profile_rejects_multiple_forced_cpu_frequencies(self) -> None:
+        profile = (REPOSITORY / "config" / "rm2100-3.4.config").read_text(
+            encoding="utf-8"
+        )
+        profile = profile.replace(
+            "CONFIG_FIRMWARE_CPU_800MHZ=n", "CONFIG_FIRMWARE_CPU_800MHZ=y"
+        )
+        profile = profile.replace(
+            "CONFIG_FIRMWARE_CPU_900MHZ=n", "CONFIG_FIRMWARE_CPU_900MHZ=y"
+        )
+
+        result = self.run_profile_validation(profile)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mutually exclusive", result.stderr)
+
 
 class PerformancePolicyTests(unittest.TestCase):
     def test_profile_can_render_each_supported_cpu_mode(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
-            for frequency, expected in (("bootloader", "n"), ("900", "y")):
+            options = {
+                "800": "CONFIG_FIRMWARE_CPU_800MHZ",
+                "900": "CONFIG_FIRMWARE_CPU_900MHZ",
+                "1000": "CONFIG_FIRMWARE_CPU_1000MHZ",
+            }
+            for frequency in ("bootloader", *options):
                 with self.subTest(frequency=frequency):
                     output = directory / f"profile-{frequency}.config"
                     result = subprocess.run(
@@ -176,10 +199,10 @@ class PerformancePolicyTests(unittest.TestCase):
                     )
 
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertIn(
-                        f"CONFIG_FIRMWARE_CPU_900MHZ={expected}",
-                        output.read_text(encoding="utf-8"),
-                    )
+                    rendered = output.read_text(encoding="utf-8")
+                    for option_frequency, option in options.items():
+                        expected = "y" if frequency == option_frequency else "n"
+                        self.assertIn(f"{option}={expected}", rendered)
 
     def test_kernel_config_must_match_the_requested_cpu_mode_and_baseline(self) -> None:
         base = (
@@ -195,14 +218,22 @@ class PerformancePolicyTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
-            for frequency, pll_line in (
-                ("bootloader", "# CONFIG_RALINK_MT7621_PLL900 is not set\n"),
-                ("900", "CONFIG_RALINK_MT7621_PLL900=y\n"),
-            ):
+            options = {
+                "800": "CONFIG_RALINK_MT7621_PLL800",
+                "900": "CONFIG_RALINK_MT7621_PLL900",
+                "1000": "CONFIG_RALINK_MT7621_PLL1000",
+            }
+            for frequency in ("bootloader", *options):
                 with self.subTest(frequency=frequency):
                     kernel_config = directory / f"kernel-{frequency}.config"
                     report = directory / f"performance-{frequency}.json"
-                    kernel_config.write_text(base + pll_line, encoding="utf-8")
+                    pll_config = "".join(
+                        f"CONFIG_RALINK_MT7621_PLL{option_frequency}=y\n"
+                        if frequency == option_frequency
+                        else f"# CONFIG_RALINK_MT7621_PLL{option_frequency} is not set\n"
+                        for option_frequency in options
+                    )
+                    kernel_config.write_text(base + pll_config, encoding="utf-8")
                     result = subprocess.run(
                         [
                             sys.executable,
@@ -223,6 +254,10 @@ class PerformancePolicyTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stderr)
                     document = json.loads(report.read_text(encoding="utf-8"))
                     self.assertEqual(document["cpu"]["selection"], frequency)
+                    expected_frequency = None if frequency == "bootloader" else int(frequency)
+                    self.assertEqual(
+                        document["cpu"]["forced_frequency_mhz"], expected_frequency
+                    )
                     self.assertTrue(document["network_acceleration"]["sfe"])
 
     def test_kernel_config_rejects_a_cpu_mode_mismatch(self) -> None:
@@ -232,7 +267,9 @@ class PerformancePolicyTests(unittest.TestCase):
             report = directory / "performance.json"
             kernel_config.write_text(
                 "CONFIG_RALINK_MT7621=y\n"
-                "CONFIG_RALINK_MT7621_PLL900=y\n",
+                "# CONFIG_RALINK_MT7621_PLL800 is not set\n"
+                "CONFIG_RALINK_MT7621_PLL900=y\n"
+                "# CONFIG_RALINK_MT7621_PLL1000 is not set\n",
                 encoding="utf-8",
             )
             result = subprocess.run(
@@ -258,13 +295,13 @@ class PerformancePolicyTests(unittest.TestCase):
 
 
 class ProvisioningPolicyTests(unittest.TestCase):
-    def test_provisioning_rejects_the_universal_admin_password(self) -> None:
+    def test_provisioning_accepts_the_documented_public_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
             admin_password = directory / "admin-password"
             wifi_password = directory / "wifi-password"
             admin_password.write_text("admin", encoding="utf-8")
-            wifi_password.write_text("A-secure-test-wifi-password", encoding="utf-8")
+            wifi_password.write_text("1234567890", encoding="utf-8")
 
             result = subprocess.run(
                 [
@@ -280,8 +317,8 @@ class ProvisioningPolicyTests(unittest.TestCase):
                 check=False,
             )
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("administrator password", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("valid provisioning credentials", result.stdout)
 
 
 class SourcePreparationTests(unittest.TestCase):
@@ -298,6 +335,43 @@ class SourcePreparationTests(unittest.TestCase):
             '#define DEF_WLAN_2G_PSK "1234567890"\n'
             '#define DEF_WLAN_5G_PSK "1234567890"\n'
             '#define DEF_ROOT_PASSWORD "admin"\n',
+            encoding="utf-8",
+        )
+        kernel_source = (
+            source / "trunk" / "linux-3.4.x" / "arch" / "mips" / "rt2880"
+        )
+        kernel_kconfig = kernel_source / "Kconfig"
+        kernel_init = kernel_source / "init.c"
+        board_config = (
+            source
+            / "trunk"
+            / "configs"
+            / "boards"
+            / "RM2100"
+            / "kernel-3.4.x-5.0.config"
+        )
+        kernel_kconfig.parent.mkdir(parents=True)
+        board_config.parent.mkdir(parents=True)
+        kernel_kconfig.write_text(
+            "config  RALINK_MT7621_PLL900\n"
+            "\tbool \"Set MT7621 CPU clock to 900MHz (Override Uboot config)\"\n"
+            "\tdepends on (RALINK_MT7621)\n"
+            "\tdefault n\n",
+            encoding="utf-8",
+        )
+        kernel_init.write_text(
+            "#if defined(CONFIG_RALINK_MT7621_PLL900)\n"
+            "\t\tif ((reg & 0xff) != 0xc2) {\n"
+            "\t\t\treg &= ~(0xff);\n"
+            "\t\t\treg |=  (0xc2);\n"
+            "\t\t\t(*((volatile u32 *)(RALINK_MEMCTRL_BASE + 0x648))) = reg;\n"
+            "\t\t\tudelay(10);\n"
+            "\t\t}\n"
+            "#endif\n",
+            encoding="utf-8",
+        )
+        board_config.write_text(
+            "# CONFIG_RALINK_MT7621_PLL900 is not set\n",
             encoding="utf-8",
         )
         admin_password = directory / "admin-password"
@@ -679,6 +753,80 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertNotIn(admin_value, result.stdout + result.stderr)
             self.assertNotIn(wifi_value, result.stdout + result.stderr)
 
+    def test_prepare_source_selects_exact_kernel_pll_for_each_cpu_mode(self) -> None:
+        for frequency in ("bootloader", "800", "900", "1000"):
+            with (
+                self.subTest(frequency=frequency),
+                tempfile.TemporaryDirectory() as temporary_directory,
+            ):
+                directory = Path(temporary_directory)
+                source, admin_password, wifi_password = self.create_base_source(directory)
+                rendered_profile = directory / "rm2100-3.4.config"
+                configure = subprocess.run(
+                    [
+                        sys.executable,
+                        str(FIRMWARE_TOOL),
+                        "configure-profile",
+                        str(REPOSITORY / "config" / "rm2100-3.4.config"),
+                        str(rendered_profile),
+                        "--cpu-frequency",
+                        frequency,
+                    ],
+                    cwd=REPOSITORY,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(configure.returncode, 0, configure.stderr)
+                prepare = subprocess.run(
+                    [
+                        sys.executable,
+                        str(FIRMWARE_TOOL),
+                        "prepare-source",
+                        str(source),
+                        "--profile",
+                        str(rendered_profile),
+                        "--admin-password-file",
+                        str(admin_password),
+                        "--wifi-password-file",
+                        str(wifi_password),
+                    ],
+                    cwd=REPOSITORY,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(prepare.returncode, 0, prepare.stderr)
+
+                board_config = (
+                    source
+                    / "trunk"
+                    / "configs"
+                    / "boards"
+                    / "RM2100"
+                    / "kernel-3.4.x-5.0.config"
+                ).read_text(encoding="utf-8")
+                for option_frequency in ("800", "900", "1000"):
+                    option = f"CONFIG_RALINK_MT7621_PLL{option_frequency}"
+                    expected = (
+                        f"{option}=y"
+                        if frequency == option_frequency
+                        else f"# {option} is not set"
+                    )
+                    self.assertIn(expected, board_config)
+
+                pll_source = (
+                    source
+                    / "trunk"
+                    / "linux-3.4.x"
+                    / "arch"
+                    / "mips"
+                    / "rt2880"
+                    / "init.c"
+                ).read_text(encoding="utf-8")
+                self.assertIn("reg &= ~(0x7ff);", pll_source)
+                self.assertIn("MT7621_PLL_TARGET_MHZ 1000", pll_source)
+
     def test_prepare_source_restricts_the_management_plane(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)
@@ -818,6 +966,19 @@ class SourcePreparationTests(unittest.TestCase):
             )
             self.assertTrue(
                 document["network_distribution"]["rps_xps_queue_policy_verified"]
+            )
+            self.assertEqual(
+                document["cpu_frequency_policy"]["supported_modes"],
+                ["bootloader", "800", "900", "1000"],
+            )
+            self.assertEqual(
+                document["cpu_frequency_policy"]["selection"], "bootloader"
+            )
+            self.assertEqual(
+                document["cpu_frequency_policy"]["exact_source_patches"], 2
+            )
+            self.assertTrue(
+                document["cpu_frequency_policy"]["full_fbdiv_register_programming"]
             )
             self.assertEqual(document["userland_hardening"]["exact_source_patches"], 20)
             self.assertTrue(

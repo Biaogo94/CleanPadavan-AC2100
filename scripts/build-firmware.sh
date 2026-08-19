@@ -10,6 +10,8 @@ OUTPUT_DIR="${OUTPUT_DIR:-$REPOSITORY/dist}"
 CACHE_DIR="${CACHE_DIR:-$REPOSITORY/.cache/downloads}"
 PYTHON="${PYTHON:-python3}"
 CPU_FREQUENCY="${CPU_FREQUENCY:-bootloader}"
+ADMIN_PASSWORD_FILE="${ADMIN_PASSWORD_FILE:-$REPOSITORY/config/default-admin-password}"
+WIFI_PASSWORD_FILE="${WIFI_PASSWORD_FILE:-$REPOSITORY/config/default-wifi-password}"
 export LC_ALL=C
 
 die() {
@@ -47,8 +49,8 @@ for command_name in curl date fakeroot find git sha256sum tar tee; do
   require_command "$command_name"
 done
 
-[[ -n "${ADMIN_PASSWORD_FILE:-}" ]] || die "ADMIN_PASSWORD_FILE is required"
-[[ -n "${WIFI_PASSWORD_FILE:-}" ]] || die "WIFI_PASSWORD_FILE is required"
+[[ -f "$ADMIN_PASSWORD_FILE" ]] || die "administrator password file not found: $ADMIN_PASSWORD_FILE"
+[[ -f "$WIFI_PASSWORD_FILE" ]] || die "Wi-Fi password file not found: $WIFI_PASSWORD_FILE"
 
 "$PYTHON" "$REPOSITORY/tools/firmware.py" validate-lock "$LOCK_FILE"
 "$PYTHON" "$REPOSITORY/tools/firmware.py" validate-profile "$PROFILE_FILE"
@@ -136,7 +138,7 @@ mapfile -d '' images < <(find "$SOURCE_DIR/trunk/images" -maxdepth 1 -type f \
 image_name="$(basename -- "${images[0]}")"
 case "$CPU_FREQUENCY" in
   bootloader) cpu_variant="cpu-bootloader" ;;
-  900) cpu_variant="cpu-900mhz" ;;
+  800|900|1000) cpu_variant="cpu-${CPU_FREQUENCY}mhz" ;;
   *) die "unsupported CPU frequency: $CPU_FREQUENCY" ;;
 esac
 bundle_image_name="${image_name%.trx}-${cpu_variant}.trx"

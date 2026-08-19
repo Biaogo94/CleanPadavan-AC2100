@@ -1,6 +1,6 @@
 # Production gates
 
-A successful GitHub Actions run creates a Release Candidate, not a Production Release. Promotion requires one immutable Firmware Bundle to pass every gate below without rebuilding it.
+A successful GitHub Actions run creates a software-verified Firmware Bundle. Machine testing is intentionally not a release gate; the evidence below covers source provenance, configuration, compilation, image integrity and reproducibility, but does not claim device-specific thermal or radio qualification.
 
 | Gate | Evidence | Required result |
 | --- | --- | --- |
@@ -12,32 +12,26 @@ A successful GitHub Actions run creates a Release Candidate, not a Production Re
 | Userland source safety | `runtime-policy.json` and compiler warning gate | HTTP ASCII length scope, HTTPS renegotiation policy and ebtables counter-file error propagation are verified |
 | Image build safety | `runtime-policy.json` and compiler warning gate | BusyBox generator I/O is checked; LZMA searches all characters; ambiguous host-tool control flow and non-literal formats are absent |
 | Compiler warnings | `build-warning-policy.json` | Every enforced high-risk warning category and the unknown-warning count are zero; each audited legacy category stays at or below its fixed limit |
-| Provisioning | Build log and deployment record | No universal defaults; secrets absent from logs |
+| Public defaults | Repository config and prepared source | WebUI `admin/admin` and Wi-Fi `1234567890` are reproducibly installed and documented |
 | Image integrity | `manifest.json` and `SHA256SUMS` | uImage header/data CRC, RM2100, 3.4, SHA-256 pass |
 | Reproducibility | `reproducibility-policy.json` and second clean build | Two builds using the same locked source, profile and provisioning inputs are byte-identical; the sealed bundle hashes all nine payload files |
 | CI | GitHub Actions run URL | Tests and full firmware build pass |
-| Recovery | Hardware qualification | Breed recovery and rollback image tested |
-| Stability | Hardware qualification | 72-hour soak, 50 cold boots, no crash or persistent corruption |
-| Routing | Hardware qualification | DHCP, static WAN, PPPoE, NAT, IPv6 and DNS pass |
-| Performance | Hardware qualification | Wired NAT >= 900 Mbit/s with SFE mode 1; CPU cost and throughput show no >5% unexplained regression |
-| Wireless | Hardware qualification | Both AU-configured radios expose the expected channels and pass association, reconnect and 24-hour traffic soak |
-| Resource limits | Hardware qualification | No sustained memory growth; temperature stays within device limit |
-| Security | Review record | WAN management closed; unnecessary listeners absent; known risks accepted |
+| Security boundary | Source and profile review | WAN management closed; HTTPS is LAN-only; SSH, Telnet and unnecessary listeners are disabled |
 
 ## Release procedure
 
-1. Build with `publish=false` and retain the Actions run URL.
-2. Verify `sha256sum --check SHA256SUMS` on a separate Linux host.
-3. Flash the exact `.trx` from that Firmware Bundle onto a qualification device.
-4. Complete `docs/HARDWARE-QUALIFICATION.md` without rebuilding.
-5. Record the manifest SHA-256, device identity, bootloader backup and test equipment.
-6. Confirm `fast_classifier` is loaded, `skip_to_bridge_ingress` is `0`, and no SFE load/unload failure is present in the system log.
-7. Promote only the tested bundle. A different CPU mode or any new build requires a new qualification record.
+1. Build the selected `bootloader`, `800`, `900` or `1000` mode with `publish=false` and retain the Actions run URL.
+2. Download the exact Firmware Bundle and verify `sha256sum --check SHA256SUMS`.
+3. Confirm `manifest.json`, `performance-profile.json`, `runtime-policy.json` and `reproducibility-policy.json` report the requested mode and successful gates.
+4. Re-run the workflow with `publish=true`, a unique release version and approval from the GitHub `production` Environment.
+5. Publish the default address and credentials with the release, and instruct users to change both passwords immediately after first login.
+
+`1000 MHz` is an optional overclock. Publishing it does not assert that every RM2100 unit has adequate voltage or thermal margin. `bootloader` remains the default release mode.
 
 ## Rollback
 
-Keep the last qualified Firmware Bundle, bootloader backup and NVRAM migration notes. A rollout must stop on boot loops, loss of either radio, WAN failure, flash errors, unexpected listeners, thermal excursions or checksum mismatch. Recover through Breed and restore the last qualified image before investigating.
+Keep a known-working Firmware Bundle, bootloader backup and NVRAM migration notes. A rollout must stop on boot loops, loss of either radio, WAN failure, flash errors, unexpected listeners, thermal excursions or checksum mismatch. Recover through Breed and restore the known-working image before investigating. The optional `HARDWARE-QUALIFICATION.md` worksheet may be used by operators who want local evidence, but it does not block this repository's builds or releases.
 
 ## Residual risk
 
-Linux 3.4 and OpenSSL 1.1.1 are end-of-life. The Source Lock makes builds auditable but does not make old code secure. Production operators must maintain a vulnerability inventory, backport applicable fixes, isolate management access, and repeat qualification after every security patch.
+Linux 3.4 and OpenSSL 1.1.1 are end-of-life. The Source Lock makes builds auditable but does not make old code secure. The published defaults are intentionally public and therefore provide no protection until changed. Operators must isolate management access, change the WebUI and Wi-Fi passwords on first login, maintain a vulnerability inventory and backport applicable fixes.

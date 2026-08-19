@@ -17,7 +17,9 @@ from pathlib import Path
 
 ALLOWED_ENABLED_OPTIONS = frozenset(
     {
+        "CONFIG_FIRMWARE_CPU_800MHZ",
         "CONFIG_FIRMWARE_CPU_900MHZ",
+        "CONFIG_FIRMWARE_CPU_1000MHZ",
         "CONFIG_FIRMWARE_ENABLE_IPV6",
         "CONFIG_FIRMWARE_INCLUDE_HTTPS",
         "CONFIG_FIRMWARE_INCLUDE_IPSET",
@@ -44,8 +46,17 @@ REQUIRED_PROFILE_VALUES = {
     "CONFIG_FIRMWARE_INCLUDE_OPENSSL_EC": "y",
     "CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE": "y",
 }
-CPU_PROFILE_OPTION = "CONFIG_FIRMWARE_CPU_900MHZ"
-CPU_FREQUENCIES = {"bootloader": "n", "900": "y"}
+CPU_PROFILE_OPTIONS = {
+    "800": "CONFIG_FIRMWARE_CPU_800MHZ",
+    "900": "CONFIG_FIRMWARE_CPU_900MHZ",
+    "1000": "CONFIG_FIRMWARE_CPU_1000MHZ",
+}
+KERNEL_CPU_OPTIONS = {
+    "800": "CONFIG_RALINK_MT7621_PLL800",
+    "900": "CONFIG_RALINK_MT7621_PLL900",
+    "1000": "CONFIG_RALINK_MT7621_PLL1000",
+}
+CPU_FREQUENCIES = ("bootloader", *CPU_PROFILE_OPTIONS)
 KERNEL_BASELINE = {
     "CONFIG_RALINK_MT7621": "y",
     "CONFIG_SMP": "y",
@@ -736,11 +747,67 @@ IMAGE_BUILD_SOURCE_PATCHES = (
         "LZMA threaded match-finder mode scope",
     ),
 )
+CPU_SOURCE_PATCHES = (
+    (
+        "trunk/linux-3.4.x/arch/mips/rt2880/Kconfig",
+        "config  RALINK_MT7621_PLL900\n"
+        "\tbool \"Set MT7621 CPU clock to 900MHz (Override Uboot config)\"\n"
+        "\tdepends on (RALINK_MT7621)\n"
+        "\tdefault n",
+        "config  RALINK_MT7621_PLL800\n"
+        "\tbool \"Set MT7621 CPU clock to 800MHz (Override Uboot config)\"\n"
+        "\tdepends on (RALINK_MT7621)\n"
+        "\tdefault n\n\n"
+        "config  RALINK_MT7621_PLL900\n"
+        "\tbool \"Set MT7621 CPU clock to 900MHz (Override Uboot config)\"\n"
+        "\tdepends on (RALINK_MT7621)\n"
+        "\tdefault n\n\n"
+        "config  RALINK_MT7621_PLL1000\n"
+        "\tbool \"Set MT7621 CPU clock to 1000MHz (Override Uboot config)\"\n"
+        "\tdepends on (RALINK_MT7621)\n"
+        "\tdefault n",
+        "MT7621 CPU frequency Kconfig",
+    ),
+    (
+        "trunk/linux-3.4.x/arch/mips/rt2880/init.c",
+        "#if defined(CONFIG_RALINK_MT7621_PLL900)\n"
+        "\t\tif ((reg & 0xff) != 0xc2) {\n"
+        "\t\t\treg &= ~(0xff);\n"
+        "\t\t\treg |=  (0xc2);\n"
+        "\t\t\t(*((volatile u32 *)(RALINK_MEMCTRL_BASE + 0x648))) = reg;\n"
+        "\t\t\tudelay(10);\n"
+        "\t\t}\n"
+        "#endif",
+        "#if defined(CONFIG_RALINK_MT7621_PLL800)\n"
+        "#define MT7621_PLL_TARGET_MHZ 800\n"
+        "#elif defined(CONFIG_RALINK_MT7621_PLL900)\n"
+        "#define MT7621_PLL_TARGET_MHZ 900\n"
+        "#elif defined(CONFIG_RALINK_MT7621_PLL1000)\n"
+        "#define MT7621_PLL_TARGET_MHZ 1000\n"
+        "#endif\n"
+        "#ifdef MT7621_PLL_TARGET_MHZ\n"
+        "\t\t{\n"
+        "\t\t\tu32 pll_base = (xtal == 25) ? 25 : 20;\n"
+        "\t\t\tu32 target_fbdiv = MT7621_PLL_TARGET_MHZ / pll_base;\n"
+        "\t\t\tu32 target_pll = ((target_fbdiv - 1) << 4) | 0x2;\n\n"
+        "\t\t\tif ((reg & 0x7ff) != target_pll) {\n"
+        "\t\t\t\treg &= ~(0x7ff);\n"
+        "\t\t\t\treg |= target_pll;\n"
+        "\t\t\t\t(*((volatile u32 *)(RALINK_MEMCTRL_BASE + 0x648))) = reg;\n"
+        "\t\t\t\tudelay(10);\n"
+        "\t\t\t}\n"
+        "\t\t}\n"
+        "#undef MT7621_PLL_TARGET_MHZ\n"
+        "#endif",
+        "MT7621 CPU PLL programming",
+    ),
+)
 SOURCE_PATCHES = (
     USERLAND_SOURCE_PATCHES
     + WIRELESS_SOURCE_PATCHES
     + HOST_BUILD_SOURCE_PATCHES
     + IMAGE_BUILD_SOURCE_PATCHES
+    + CPU_SOURCE_PATCHES
 )
 SMP_SOURCE_CHECKS = (
     ("trunk/user/rc/rc.c", "\tset_cpu_affinity(is_ap_mode);", "CPU affinity startup"),
@@ -935,26 +1002,45 @@ def validate_profile(path: Path) -> dict[str, str]:
     for key, expected in REQUIRED_PROFILE_VALUES.items():
         if values.get(key) != expected:
             raise FirmwareError(f"{key} must be {expected}")
-    if values.get(CPU_PROFILE_OPTION) not in CPU_FREQUENCIES.values():
-        raise FirmwareError(f"{CPU_PROFILE_OPTION} must be n or y")
+    invalid_cpu_options = [
+        option
+        for option in CPU_PROFILE_OPTIONS.values()
+        if values.get(option) not in {"n", "y"}
+    ]
+    if invalid_cpu_options:
+        raise FirmwareError(
+            f"CPU frequency options must be n or y: {', '.join(invalid_cpu_options)}"
+        )
+    enabled_cpu_options = [
+        option for option in CPU_PROFILE_OPTIONS.values() if values[option] == "y"
+    ]
+    if len(enabled_cpu_options) > 1:
+        raise FirmwareError("CPU frequency options are mutually exclusive")
     return values
 
 
 def cpu_frequency_from_profile(values: dict[str, str]) -> str:
-    return "900" if values[CPU_PROFILE_OPTION] == "y" else "bootloader"
+    enabled = [
+        frequency
+        for frequency, option in CPU_PROFILE_OPTIONS.items()
+        if values[option] == "y"
+    ]
+    return enabled[0] if enabled else "bootloader"
 
 
 def configure_profile(source: Path, output: Path, cpu_frequency: str) -> None:
     validate_profile(source)
     if cpu_frequency not in CPU_FREQUENCIES:
-        raise FirmwareError("CPU frequency must be bootloader or 900")
+        raise FirmwareError(
+            f"CPU frequency must be one of: {', '.join(CPU_FREQUENCIES)}"
+        )
     content = source.read_text(encoding="utf-8")
-    pattern = re.compile(rf"^{re.escape(CPU_PROFILE_OPTION)}=.*$", re.MULTILINE)
-    content, count = pattern.subn(
-        f"{CPU_PROFILE_OPTION}={CPU_FREQUENCIES[cpu_frequency]}", content
-    )
-    if count != 1:
-        raise FirmwareError(f"expected exactly one {CPU_PROFILE_OPTION}, found {count}")
+    for frequency, option in CPU_PROFILE_OPTIONS.items():
+        pattern = re.compile(rf"^{re.escape(option)}=.*$", re.MULTILINE)
+        value = "y" if cpu_frequency == frequency else "n"
+        content, count = pattern.subn(f"{option}={value}", content)
+        if count != 1:
+            raise FirmwareError(f"expected exactly one {option}, found {count}")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(content, encoding="utf-8", newline="\n")
     validate_profile(output)
@@ -1010,10 +1096,10 @@ def read_secret(path: Path, label: str, minimum: int, maximum: int, forbidden: s
 
 def validate_credentials(admin_path: Path, wifi_path: Path) -> tuple[str, str]:
     admin_password = read_secret(
-        admin_path, "administrator password", 16, 64, {"admin", "password"}
+        admin_path, "administrator password", 5, 64, set()
     )
     wifi_password = read_secret(
-        wifi_path, "Wi-Fi password", 16, 63, {"1234567890", "password"}
+        wifi_path, "Wi-Fi password", 8, 63, set()
     )
     if admin_password == wifi_password:
         raise FirmwareError("administrator password and Wi-Fi password must differ")
@@ -1034,6 +1120,48 @@ def replace_exact_once(content: str, old: str, new: str, label: str) -> str:
     if count != 1:
         raise FirmwareError(f"expected exactly one {label}, found {count}")
     return content.replace(old, new, 1)
+
+
+def configure_kernel_cpu(source: Path, cpu_frequency: str) -> None:
+    kernel_config = (
+        source
+        / "trunk"
+        / "configs"
+        / "boards"
+        / "RM2100"
+        / "kernel-3.4.x-5.0.config"
+    )
+    if not kernel_config.is_file():
+        return
+
+    content = kernel_config.read_text(encoding="utf-8")
+    legacy_option = "# CONFIG_RALINK_MT7621_PLL900 is not set"
+    if not all(option in content for option in KERNEL_CPU_OPTIONS.values()):
+        expanded_options = "\n".join(
+            f"# {option} is not set" for option in KERNEL_CPU_OPTIONS.values()
+        )
+        content = replace_exact_once(
+            content,
+            legacy_option,
+            expanded_options,
+            "RM2100 CPU PLL kernel options",
+        )
+
+    for frequency, option in KERNEL_CPU_OPTIONS.items():
+        pattern = re.compile(
+            rf"^(?:# {re.escape(option)} is not set|{re.escape(option)}=[yn])$",
+            re.MULTILINE,
+        )
+        replacement = (
+            f"{option}=y"
+            if cpu_frequency == frequency
+            else f"# {option} is not set"
+        )
+        content, count = pattern.subn(replacement, content)
+        if count != 1:
+            raise FirmwareError(f"expected exactly one {option}, found {count}")
+
+    kernel_config.write_text(content, encoding="utf-8", newline="\n")
 
 
 def prepare_source(
@@ -1108,6 +1236,8 @@ def prepare_source(
         source_content = source_file.read_text(encoding="utf-8")
         source_content = replace_exact_once(source_content, old, new, label)
         source_file.write_text(source_content, encoding="utf-8", newline="\n")
+
+    configure_kernel_cpu(source, cpu_frequency_from_profile(profile_values))
 
     xz_makefile = source / "trunk" / "tools" / "mksquashfs_xz" / "Makefile"
     if xz_makefile.is_file():
@@ -1212,6 +1342,26 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
                 source_file.read_text(encoding="utf-8") if source_file.is_file() else ""
             )
         checks[label] = source_cache[relative_path].count(snippet) == 1
+
+    template = source / "trunk" / "configs" / "templates" / "RM2100.config"
+    kernel_config = (
+        source
+        / "trunk"
+        / "configs"
+        / "boards"
+        / "RM2100"
+        / "kernel-3.4.x-5.0.config"
+    )
+    if not template.is_file() or not kernel_config.is_file():
+        raise FirmwareError("prepared source is missing the RM2100 CPU policy files")
+    cpu_selection = cpu_frequency_from_profile(validate_profile(template))
+    kernel_values = parse_kernel_config(kernel_config)
+    for frequency, option in KERNEL_CPU_OPTIONS.items():
+        expected_value = "y" if cpu_selection == frequency else "n"
+        checks[f"{frequency} MHz kernel PLL selection"] = (
+            kernel_values.get(option) == expected_value
+        )
+
     failed = [name for name, passed in checks.items() if not passed]
     if failed:
         raise FirmwareError(f"source policy failed: {', '.join(failed)}")
@@ -1227,6 +1377,16 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
         "network_distribution": {
             "mt7621_irq_affinity_verified": True,
             "rps_xps_queue_policy_verified": True,
+        },
+        "cpu_frequency_policy": {
+            "selection": cpu_selection,
+            "forced_frequency_mhz": (
+                None if cpu_selection == "bootloader" else int(cpu_selection)
+            ),
+            "supported_modes": list(CPU_FREQUENCIES),
+            "exact_source_patches": len(CPU_SOURCE_PATCHES),
+            "full_fbdiv_register_programming": True,
+            "kernel_options_mutually_exclusive": True,
         },
         "userland_hardening": {
             "exact_source_patches": len(USERLAND_SOURCE_PATCHES),
@@ -1356,10 +1516,13 @@ def verify_kernel_config(
     path: Path, cpu_frequency: str, report: Path
 ) -> dict[str, object]:
     if cpu_frequency not in CPU_FREQUENCIES:
-        raise FirmwareError("CPU frequency must be bootloader or 900")
+        raise FirmwareError(
+            f"CPU frequency must be one of: {', '.join(CPU_FREQUENCIES)}"
+        )
     values = parse_kernel_config(path)
     expected = dict(KERNEL_BASELINE)
-    expected["CONFIG_RALINK_MT7621_PLL900"] = CPU_FREQUENCIES[cpu_frequency]
+    for frequency, option in KERNEL_CPU_OPTIONS.items():
+        expected[option] = "y" if cpu_frequency == frequency else "n"
     failed = [
         f"{key}={expected_value} (found {values.get(key, 'missing')})"
         for key, expected_value in expected.items()
@@ -1373,7 +1536,9 @@ def verify_kernel_config(
         "kernel": "3.4",
         "cpu": {
             "selection": cpu_frequency,
-            "forced_frequency_mhz": 900 if cpu_frequency == "900" else None,
+            "forced_frequency_mhz": (
+                None if cpu_frequency == "bootloader" else int(cpu_frequency)
+            ),
             "logical_cpus": 4,
             "smp": True,
         },
