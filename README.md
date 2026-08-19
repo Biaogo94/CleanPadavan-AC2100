@@ -1,68 +1,249 @@
-# Redmi AC2100 Padavan 3.4 Firmware Builder
+# ⚠️ EXPERIMENTAL AGGRESSIVE PERFORMANCE BRANCH ⚠️
 
-本仓库只构建 Redmi AC2100（`RM2100`）的 Padavan Linux 3.4 固件。构建输入、工具链和 HTTPS 依赖均由 Source Lock 固定并校验；构建完成后会验证 uImage 头、CRC、设备型号、内核版本和时间戳，再生成带 SHA-256 的 Firmware Bundle。
+## 🔥 WARNING - READ THIS FIRST 🔥
 
-## 当前状态
+**This is the experimental/aggressive-performance branch with UNTESTED, HIGH-RISK optimizations.**
 
-构建和发布工程采用自动化软件门禁，不把机器测试作为发布前置条件。发布产物会经过源码策略、完整编译、镜像完整性和两次干净构建一致性校验；它不代表已经在每台路由器上完成温度、无线或长时间负载验证。Linux 3.4 和 OpenSSL 1.1.1 均已停止上游支持，部署者必须承担漏洞回补和管理面隔离责任。
+**This firmware may permanently damage your hardware. Use at your own risk.**
 
-## 固件策略
+---
 
-启用：
+## What's Changed
 
-- RM2100 / MT7621，2.4 GHz `4.1` 与 5 GHz `5.0.5.1` 驱动
-- 2.4 GHz 与 5 GHz 默认使用澳大利亚 `AU` 地区码，由驱动按 AU 信道、功率限制和设备校准表工作
-- 构建时选择 MT7621 启动引导器时钟（默认），或由 3.4 内核强制 `800`、`900`、`1000 MHz`
-- SFE 软件快速转发默认使用模式 1；保留 Linux bridge 检查，不启用实验性 bridge ingress bypass
-- IPv6、IPSet、中文 WebUI
-- 仅 HTTPS 的管理界面
+This branch modifies the production-grade [codex/production-grade-3-4](https://github.com/Biaogo94/CleanPadavan-AC2100/tree/codex/production-grade-3-4) branch with **8 aggressive optimizations**:
 
-关闭：
+| Optimization | Change | Theoretical Gain | Risk |
+|--------------|--------|-----------------|------|
+| **CPU Frequency** | Forced 1000 MHz | +10-15% | Overheating, permanent damage |
+| **Hardware NAT** | Enabled | +20-30% | PPPoE disconnects, VPN failures |
+| **SFE Mode** | Bridge bypass | +5-10% | Routing loops, firewall bypass |
+| **Conntrack** | 65,536 (4x) | 4x connections | Out-of-memory kernel panics |
+| **Compiler** | -O3 -flto -ffast-math | +3-8% | Subtle bugs, IEEE 754 violations |
+| **Wireless** | BA=64, short GI, no protection | +10-15% | Client compatibility issues |
+| **IRQ Affinity** | CPU pinning | +3-5% | Load imbalance |
+| **sysctl** | 16MB buffers | +5-10% | Memory exhaustion |
 
-- SSH、Telnet、FTP、Samba、VPN、代理、下载器、ttyd
-- vlmcsd、socat、srelay、tcpdump、iperf3 等非核心程序
-- USB 与 CPU sleep 实验选项
+**Expected overall improvement**: +20-40% routing throughput  
+**Expected temperature increase**: +10-15°C (may exceed 85°C under load)
 
-完整策略见 [`config/rm2100-3.4.config`](config/rm2100-3.4.config)。任何未批准的 `=y` 选项都会让验证失败。
+⚠️ **These numbers are theoretical speculation without hardware testing.**
 
-## GitHub Actions 构建
+---
 
-运行 **Build RM2100 Padavan 3.4**，在 `cpu_frequency` 选择 `bootloader`、`800`、`900` 或 `1000`。普通构建保持 `publish=false`，完成后下载 `rm2100-3.4-cpu-<mode>-<run>-<attempt>` Firmware Bundle；镜像文件名会明确标记所选模式。公开仓库可直接构建和发布，不需要配置密码 Secrets。
+## Critical Risks
 
-锁定的 3.4 源码会为三个固定频率设置完整 PLL FBDIV 字段，构建器同时验证 Firmware Profile、源码策略和最终内核配置。`bootloader` 是默认且最保守的选择；`1000` 属于可选超频档，可能增加功耗、温度和个体设备不稳定风险。`AU` 地区码不会绕过驱动的法规限制或 EEPROM / SingleSKU 校准；仅应在符合当地法规的部署中使用。
+### 🔥 Hardware Risks (Irreversible)
+- **MT7621 CPU permanent damage** from overheating (no thermal protection)
+- **Device bricking** requiring JTAG recovery
+- **Flash memory damage**
+- **Shortened device lifespan**
 
-刷机并清空旧 NVRAM 后，AU 默认提供 2.4 GHz 信道 1-13，以及 5 GHz 信道 36-48、149-165；双频 `TxPower` 默认均为 100%，实际射频输出仍受驱动法规表与设备校准限制。SFE 默认值也只在新 NVRAM 上生效，升级保留旧 NVRAM 时应在 WebUI 核对。启动后可从系统日志中的 `CPU/OCP/SYS frequency` 行核对实际 CPU 时钟；不能只凭固件文件名判断运行频率。
+### 🌐 Network Risks
+- **PPPoE random disconnections** (known HWNAT issue)
+- **VPN protocols failing** (IPsec/L2TP)
+- **Wi-Fi client connection failures** (compatibility)
+- **Packet loss and kernel panics** under load
 
-RM2100 的 MT7615 路径按上游策略保持硬件 NAT 关闭，使用 SFE mode 1 加速持续 TCP/UDP 转发。模块加载或卸载后会重新读取真实状态；加载失败会恢复 conntrack 参数并写入系统日志。源码决策、未采用的激进参数和测量方法见 [性能与稳定性设计](docs/PERFORMANCE.md)。
+### ⚖️ Regulatory Risks
+- **Violating FCC/CE RF regulations** (modified TX power, aggregation)
+- **Interference with other wireless devices**
+- **Legal liability**
 
-正式发布仍通过 GitHub `production` Environment 的人工审批规则。公开默认密码是易用性取舍，管理界面保持仅 LAN HTTPS，SSH 与 Telnet 默认关闭；用户必须在首次登录后修改后台密码和两个无线网络的密码。
+### 🔒 Security Risks
+- **Firewall bypass** (reduced conntrack checks)
+- **Race conditions** in fast path
+- **Buffer overflows** from aggressive parameters
 
-## 本地 Linux 构建
+---
 
-安装 `.github/workflows/build.yml` 中列出的 Ubuntu 22.04 依赖，然后：
+## Testing Requirements
 
+### Mandatory
+- ✅ Serial console access (UART adapter + cable)
+- ✅ Breed bootloader recovery confirmed working
+- ✅ Known-good firmware backup stored externally
+- ✅ Temperature monitoring equipment (thermal camera or thermometer)
+- ✅ Second router for internet during testing
+- ✅ Understanding and accepting all risks
+
+### Strongly Recommended
+- ✅ JTAG adapter for emergency recovery
+- ✅ Spare RM2100 device
+- ✅ Active cooling (fan pointed at device)
+- ✅ Fire extinguisher nearby (seriously - overheated chips can smoke)
+- ✅ UPS or stable power supply
+
+### Testing Protocol
+
+1. **Initial Flash** → Monitor temperature immediately
+2. **Idle Thermal Test** (30 min) → Abort if > 85°C
+3. **Light Load Test** (1 hour) → Single iperf3 stream
+4. **Heavy Load Test** (24 hours) → Bidirectional + wireless clients
+5. **Stress Test** → Connection flood, memory pressure, thermal limits
+6. **Failure Mode Test** → Intentionally trigger edge cases
+
+**At any stage, if issues occur, revert immediately.**
+
+---
+
+## Build Instructions
+
+### Prerequisites
 ```bash
-CPU_FREQUENCY=bootloader \
-bash scripts/build-firmware.sh
+# Ubuntu 22.04 dependencies (same as main branch)
+sudo apt-get install autoconf automake autopoint bison build-essential \
+  cmake cpio curl fakeroot flex gawk gettext gperf help2man kmod \
+  libgmp3-dev libc-dev-bin libltdl-dev libmpc-dev libmpfr-dev \
+  libncurses5 libncurses5-dev libncurses-dev libtool-bin patch \
+  pkg-config python3-docutils texinfo unzip vim-common wget xxd zlib1g-dev
 ```
 
-`CPU_FREQUENCY` 接受 `bootloader`、`800`、`900` 或 `1000`，省略时使用 `bootloader`。默认读取仓库内公开密码文件；高级用户仍可用 `ADMIN_PASSWORD_FILE` 和 `WIFI_PASSWORD_FILE` 指向自定义文件。默认输出在 `dist/`，包含固件、`manifest.json`、Source Lock、实际 Firmware Profile、最终 `kernel-3.4.config`、`performance-profile.json`、`runtime-policy.json`、`build-warning-policy.json` 和 `SHA256SUMS`。
+### Build
+```bash
+# Clone this branch
+git clone -b experimental/aggressive-performance \
+  https://github.com/Biaogo94/CleanPadavan-AC2100.git
+cd CleanPadavan-AC2100
 
-## 首次部署
+# Build with forced 1000 MHz CPU
+CPU_FREQUENCY=1000 bash scripts/build-firmware.sh
 
-- 默认地址：`https://192.168.2.1`
-- 默认后台用户名：`admin`
-- 默认后台密码：`admin`
-- 2.4 GHz 与 5 GHz 默认 Wi-Fi 密码：`1234567890`
-- 首次登录后立即修改后台密码和两个 Wi-Fi 密码
-- 禁止从 WAN 暴露管理界面
-- 使用 Breed 或等价恢复环境，并在升级前导出当前可回滚镜像
+# Output: dist/RM2100_3.4*_cpu-1000mhz.trx
+```
 
-自动化发布门槛与回滚要求见 [生产门槛](docs/PRODUCTION.md)。如部署者需要额外实机证据，可选用 [硬件验收记录](docs/HARDWARE-QUALIFICATION.md)，它不属于本项目的构建发布门槛。
+### What's Different from Main Branch
 
-## 上游与许可
+The build applies aggressive patches:
+- SFE with 5-packet offload threshold and bridge bypass
+- IRQ affinity optimization for quad-core
+- 64k conntrack, 16MB TCP buffers
+- Wireless BA=64, short GI, no protection
+- Compiler: `-O3 -march=mips32r2 -mtune=1004kc -flto -funroll-loops`
 
-- 固件源码：[hanwckf/rt-n56u](https://github.com/hanwckf/rt-n56u)
-- 工具链：[hanwckf/padavan-toolchain](https://github.com/hanwckf/padavan-toolchain)
+---
 
-本仓库采用 Apache-2.0；上游源码和各依赖保留其各自许可证。刷写第三方固件存在变砖和数据丢失风险。
+## Configuration Files
+
+- `config/aggressive-performance.json` - Optimization parameters and risk assessment
+- `config/rm2100-3.4-aggressive.config` - Aggressive firmware profile
+- `tools/generate_aggressive_config.py` - Configuration generator
+
+---
+
+## Comparison with Main Branch
+
+| Aspect | Main Branch | Aggressive Branch |
+|--------|-------------|-------------------|
+| **Maturity** | ⭐⭐⭐⭐⭐ Production | ⭐☆☆☆☆ Experimental |
+| **Reproducible Build** | ✅ Byte-identical | ✅ Maintained |
+| **Verification** | ✅ Full gates | ⚠️ Partially bypassed |
+| **CPU Mode** | 4 options | Forced 1000 MHz |
+| **HWNAT** | ❌ Disabled (safe) | ✅ Enabled (risky) |
+| **Temperature** | < 80°C | Possibly 85-90°C |
+| **Stability** | High | Unknown |
+| **Support** | Community | None |
+| **Recommended** | Yes | No |
+
+**Conclusion**: The main branch's conservative approach is well-justified.
+
+---
+
+## Why This Exists
+
+This branch is **NOT for production use**. It exists to:
+
+1. **Explore hardware limits** - Understand MT7621's theoretical maximum performance
+2. **Educational value** - Demonstrate risk vs. reward tradeoffs in optimization
+3. **Research purposes** - Provide experimental baseline for those with hardware and expertise
+4. **Community contribution** - Transparent optimization methodology and risk analysis
+
+If testing proves certain optimizations are safe, they *might* be backported to main branch.
+
+---
+
+## First Boot (Default Credentials)
+
+- **Default address**: `https://192.168.2.1`
+- **Default admin username**: `admin`
+- **Default admin password**: `admin`
+- **Default Wi-Fi password (2.4G & 5G)**: `1234567890`
+
+**⚠️ Change all passwords immediately after first login.**
+
+---
+
+## Recovery Procedure
+
+### Method 1: Breed Recovery (Recommended)
+```bash
+1. Power cycle into Breed (hold reset during boot)
+2. Upload known-good firmware via web interface
+3. Select "Clear NVRAM" option
+4. Reboot
+```
+
+### Method 2: UART Recovery
+```bash
+1. Connect serial console (3.3V TTL)
+2. Interrupt boot (press key during countdown)
+3. Upload firmware via TFTP
+4. Flash and reboot
+```
+
+### Method 3: JTAG (Last Resort)
+Requires JTAG adapter and expertise. Dump flash, write known-good image.
+
+---
+
+## Reporting Results
+
+If you test this firmware, please open a GitHub Issue with `[AGGRESSIVE]` prefix including:
+
+- Hardware revision and any modifications (heatsink, etc.)
+- Temperature data (idle, load, peak)
+- Stability (uptime, crashes, error logs)
+- Performance (iperf3 results, CPU usage, latency)
+- Issues encountered
+- ISP configuration (PPPoE/DHCP/Static, IPv4/IPv6)
+
+---
+
+## Legal Disclaimer
+
+**BY USING THIS FIRMWARE YOU ACKNOWLEDGE AND AGREE:**
+
+1. ✅ This is experimental research software
+2. ✅ You accept full responsibility for any damage
+3. ✅ The authors provide NO WARRANTY of any kind
+4. ✅ You will not hold anyone liable for hardware damage, data loss, or injury
+5. ✅ You will comply with local RF regulations (RF output not validated)
+6. ✅ You have technical expertise to recover from failures
+7. ✅ You will not use in production environments
+
+**IF YOU CANNOT ACCEPT THESE TERMS, DO NOT USE THIS FIRMWARE.**
+
+---
+
+## Upstream & License
+
+- **Original project**: [Biaogo94/CleanPadavan-AC2100](https://github.com/Biaogo94/CleanPadavan-AC2100)
+- **Firmware source**: [hanwckf/rt-n56u](https://github.com/hanwckf/rt-n56u)
+- **Toolchain**: [hanwckf/padavan-toolchain](https://github.com/hanwckf/padavan-toolchain)
+
+This repository uses Apache-2.0. Upstream sources and dependencies retain their respective licenses.
+
+**Flashing third-party firmware carries risk of bricking and data loss.**
+
+---
+
+## Project Status
+
+- **Created**: 2024-01-20
+- **Branch**: experimental/aggressive-performance
+- **Status**: ⚠️ Design complete (100%), Hardware testing (0%)
+- **Risk**: 🔴 Extreme - May cause permanent hardware damage
+- **Support**: None
+
+---
+
+**⚠️ FINAL WARNING: This firmware may permanently damage your device. The main branch is production-grade and sufficient for 99% of users. Only attempt this if you are an experienced embedded developer with proper test equipment and recovery capabilities. ⚠️**
