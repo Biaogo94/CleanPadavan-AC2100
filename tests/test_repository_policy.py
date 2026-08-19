@@ -49,6 +49,23 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("/etc/apt/apt-mirrors.txt", build)
         self.assertIn("https://archive.ubuntu.com/ubuntu", build)
 
+    def test_hardware_evidence_collector_is_secret_safe(self) -> None:
+        collector = (REPOSITORY / "scripts" / "collect-hardware-evidence.sh").read_text(
+            encoding="utf-8"
+        )
+        workflow = (WORKFLOWS / "build.yml").read_text(encoding="utf-8")
+        self.assertTrue(collector.startswith("#!/bin/sh\n"))
+        self.assertIn("snapshot|soak", collector)
+        self.assertIn("rt_country_code wl_country_code sfe_enable", collector)
+        self.assertIn("/sys/fast_classifier/skip_to_bridge_ingress", collector)
+        self.assertIn("/sys/fast_classifier/exceptions", collector)
+        self.assertIn("samples.tsv", collector)
+        self.assertIn("sha256sum", collector)
+        self.assertNotIn("nvram show", collector.replace("`nvram show`", ""))
+        self.assertNotIn("_password", collector.lower())
+        self.assertNotIn("_psk", collector.lower())
+        self.assertIn("sh scripts/collect-hardware-evidence.sh --help", workflow)
+
     def test_firmware_policy_selects_au_and_verifies_the_cpu_variant(self) -> None:
         profile = (REPOSITORY / "config" / "rm2100-3.4.config").read_text(encoding="utf-8")
         build_script = (REPOSITORY / "scripts" / "build-firmware.sh").read_text(

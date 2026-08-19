@@ -52,6 +52,7 @@ jobs:
         run: |
           python3 -m unittest discover --start-directory tests --verbose
           shellcheck scripts/*.sh
+          sh scripts/collect-hardware-evidence.sh --help
           python3 tools/firmware.py validate-lock config/build-lock.json
           python3 tools/firmware.py validate-profile config/rm2100-3.4.config
 

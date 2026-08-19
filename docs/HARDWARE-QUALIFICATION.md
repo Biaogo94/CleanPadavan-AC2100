@@ -48,6 +48,28 @@ Copy this file for each candidate. Do not edit the template to claim generic qua
 
 Record free memory, load, temperature and error counters at 0, 24, 48 and 72 hours.
 
+### Evidence collector
+
+Run `scripts/collect-hardware-evidence.sh` on the qualification router from a local console or a temporary LAN-only management session. The script is POSIX/BusyBox compatible and uses an explicit safe NVRAM allowlist; it never runs `nvram show` or reads password/PSK keys. If SSH is temporarily enabled to transfer or run the script, disable it afterwards and separately verify that the clean production configuration has no SSH listener.
+
+One-time snapshot:
+
+```sh
+chmod 700 /tmp/collect-hardware-evidence.sh
+/tmp/collect-hardware-evidence.sh snapshot /tmp/rm2100-candidate-snapshot
+(cd /tmp/rm2100-candidate-snapshot && sha256sum -c SHA256SUMS)
+```
+
+The default 72-hour schedule records 73 hourly samples, including both endpoints:
+
+```sh
+/tmp/collect-hardware-evidence.sh soak /tmp/rm2100-candidate-soak 3600 73
+(cd /tmp/rm2100-candidate-soak && sha256sum -c SHA256SUMS)
+tar -C /tmp -czf /tmp/rm2100-candidate-soak.tar.gz rm2100-candidate-soak
+```
+
+Archive the evidence next to this completed record. Treat the archive as confidential qualification data because interface, route and radio diagnostics can contain local IP and MAC addresses; do not attach it to a public issue or release. `samples.tsv` tracks uptime, one-minute load, free/available memory, the first readable temperature sensor, and aggregate interface error/drop counters. The snapshot also records safe identity/configuration keys, loaded modules, SFE bridge-bypass state and exception counters, listeners, radio statistics and filtered fault events. The collector deliberately does not read the SFE IPv4/IPv6 debug character devices because they expose connection tuples. A missing temperature sensor is reported as `NA` and requires an external measurement; it is not a pass.
+
 ## Performance
 
 Use the same client, server, cables, channel, distance and iperf3 parameters as the previous qualified baseline.
