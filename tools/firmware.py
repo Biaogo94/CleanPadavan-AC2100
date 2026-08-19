@@ -61,6 +61,17 @@ IMAGE_HEADER = struct.Struct(">7I4B28sI")
 IMAGE_MAGIC = 0x27051956
 MIN_IMAGE_SIZE = 4 * 1024 * 1024
 MAX_IMAGE_SIZE = 16 * 1024 * 1024
+BUNDLE_METADATA_FILES = (
+    "manifest.json",
+    "build-lock.json",
+    "rm2100-3.4.config",
+    "kernel-3.4.config",
+    "performance-profile.json",
+    "runtime-policy.json",
+    "build-warning-policy.json",
+)
+BUNDLE_CHECKSUM_FILE = "SHA256SUMS"
+REPRODUCIBILITY_REPORT_FILE = "reproducibility-policy.json"
 SFE_DEFAULT_DISABLED = '\t{ "sfe_enable", "0" },'
 SFE_DEFAULT_ENABLED = '\t{ "sfe_enable", "1" },'
 SFE_RUNTIME_ORIGINAL = """\
@@ -461,6 +472,103 @@ HOST_BUILD_SOURCE_PATCHES = (
     ),
 )
 IMAGE_BUILD_SOURCE_PATCHES = (
+    (
+        "trunk/tools/mksquashfs_xz/squashfs-4.3/mksquashfs.c",
+        "long long global_uid = -1, global_gid = -1;\n\n"
+        "/* superblock attributes */",
+        "long long global_uid = -1, global_gid = -1;\n\n"
+        "static time_t reproducible_time(void)\n"
+        "{\n"
+        "\tconst char *value = getenv(\"SOURCE_DATE_EPOCH\");\n"
+        "\tchar *end;\n"
+        "\tunsigned long epoch;\n\n"
+        "\tif (value == NULL || *value == '\\0')\n"
+        "\t\treturn time(NULL);\n"
+        "\terrno = 0;\n"
+        "\tepoch = strtoul(value, &end, 10);\n"
+        "\tif (errno != 0 || *end != '\\0' || epoch == 0) {\n"
+        "\t\tfprintf(stderr, \"Invalid SOURCE_DATE_EPOCH\\n\");\n"
+        "\t\texit(1);\n"
+        "\t}\n"
+        "\treturn (time_t) epoch;\n"
+        "}\n\n"
+        "/* superblock attributes */",
+        "SquashFS reproducible timestamp helper",
+    ),
+    (
+        "trunk/tools/mksquashfs_xz/squashfs-4.3/mksquashfs.c",
+        "\tbase->mtime = buf->st_mtime;",
+        "\tbase->mtime = reproducible_time();",
+        "SquashFS inode timestamps",
+    ),
+    (
+        "trunk/tools/mksquashfs_xz/squashfs-4.3/mksquashfs.c",
+        "\t\tbuf.st_uid = getuid();\n"
+        "\t\tbuf.st_gid = getgid();\n"
+        "\t\tbuf.st_mtime = time(NULL);\n"
+        "\t\tbuf.st_dev = 0;",
+        "\t\tbuf.st_uid = getuid();\n"
+        "\t\tbuf.st_gid = getgid();\n"
+        "\t\tbuf.st_mtime = reproducible_time();\n"
+        "\t\tbuf.st_dev = 0;",
+        "SquashFS synthetic root timestamp",
+    ),
+    (
+        "trunk/tools/mksquashfs_xz/squashfs-4.3/mksquashfs.c",
+        "\t\tbuf.st_rdev = makedev(pseudo_ent->dev->major,\n"
+        "\t\t\tpseudo_ent->dev->minor);\n"
+        "\t\tbuf.st_mtime = time(NULL);\n"
+        "\t\tbuf.st_ino = pseudo_ino ++;",
+        "\t\tbuf.st_rdev = makedev(pseudo_ent->dev->major,\n"
+        "\t\t\tpseudo_ent->dev->minor);\n"
+        "\t\tbuf.st_mtime = reproducible_time();\n"
+        "\t\tbuf.st_ino = pseudo_ino ++;",
+        "SquashFS pseudo-entry timestamp",
+    ),
+    (
+        "trunk/tools/mksquashfs_xz/squashfs-4.3/mksquashfs.c",
+        "\tsBlk.mkfs_time = time(NULL);",
+        "\tsBlk.mkfs_time = reproducible_time();",
+        "SquashFS superblock timestamp",
+    ),
+    (
+        "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/confdata.c",
+        "\tsym = sym_lookup(\"KERNELVERSION\", 0);\n"
+        "\tsym_calc_value(sym);\n"
+        "\ttime(&now);\n"
+        "\tenv = getenv(\"KCONFIG_NOTIMESTAMP\");",
+        "\tsym = sym_lookup(\"KERNELVERSION\", 0);\n"
+        "\tsym_calc_value(sym);\n"
+        "\tenv = getenv(\"SOURCE_DATE_EPOCH\");\n"
+        "\tif (env && *env) {\n"
+        "\t\tchar *end;\n"
+        "\t\tunsigned long epoch = strtoul(env, &end, 10);\n\n"
+        "\t\tif (*end != '\\0' || epoch == 0)\n"
+        "\t\t\treturn 1;\n"
+        "\t\tnow = (time_t)epoch;\n"
+        "\t} else {\n"
+        "\t\ttime(&now);\n"
+        "\t}\n"
+        "\tenv = getenv(\"KCONFIG_NOTIMESTAMP\");",
+        "BusyBox timestamp source epoch",
+    ),
+    (
+        "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/confdata.c",
+        "\t\t\t\tstrftime(buf, sizeof(buf), \"#define AUTOCONF_TIMESTAMP \"\n"
+        "\t\t\t\t\t\"\\\"%Y-%m-%d %H:%M:%S %Z\\\"\\n\", localtime(&now));\n"
+        "\t\t\t/* if user has Factory timezone or some other odd install, the\n"
+        "\t\t\t * %Z above will overflow the string leaving us with undefined\n"
+        "\t\t\t * results ... so let's try again without the timezone.\n"
+        "\t\t\t */\n"
+        "\t\t\tif (ret == 0)\n"
+        "\t\t\t\tstrftime(buf, sizeof(buf), \"#define AUTOCONF_TIMESTAMP \"\n"
+        "\t\t\t\t\t\"\\\"%Y-%m-%d %H:%M:%S\\\"\\n\", localtime(&now));",
+        "\t\t\t\tstrftime(buf, sizeof(buf), \"#define AUTOCONF_TIMESTAMP \"\n"
+        "\t\t\t\t\t\"\\\"%Y-%m-%d %H:%M:%S UTC\\\"\\n\", gmtime(&now));\n"
+        "\t\t\tif (ret == 0)\n"
+        "\t\t\t\treturn 1;",
+        "BusyBox timestamp UTC format",
+    ),
     (
         "trunk/user/busybox/busybox-1.24.x/applets/usage_pod.c",
         "\t\tprintf(usage_array[i].aname);",
@@ -1144,8 +1252,11 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
             "components": ["busybox-1.24.x", "lzma-4.65"],
             "exact_source_patches": len(IMAGE_BUILD_SOURCE_PATCHES),
             "ambiguous_control_flow_removed": True,
+            "busybox_timestamp_from_source_epoch": True,
+            "busybox_timestamp_is_utc": True,
             "literal_format_strings": True,
             "lzma_string_search_checks_all_characters": True,
+            "squashfs_timestamps_from_source_epoch": True,
         },
         "watchdog": {"default_enabled": True},
     }
@@ -1285,6 +1396,111 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def firmware_bundle_files(bundle: Path, include_reproducibility: bool) -> list[str]:
+    if not bundle.is_dir():
+        raise FirmwareError(f"firmware bundle directory not found: {bundle}")
+    images = sorted(path.name for path in bundle.glob("RM2100_3.4*.trx") if path.is_file())
+    if len(images) != 1:
+        raise FirmwareError(
+            f"expected one RM2100 3.4 image in {bundle}, found {len(images)}"
+        )
+    files = [images[0], *BUNDLE_METADATA_FILES]
+    if include_reproducibility:
+        files.append(REPRODUCIBILITY_REPORT_FILE)
+    return files
+
+
+def verify_bundle_checksums(bundle: Path, expected_files: list[str]) -> None:
+    checksum_path = bundle / BUNDLE_CHECKSUM_FILE
+    if not checksum_path.is_file():
+        raise FirmwareError(f"missing bundle checksum file: {checksum_path}")
+    entries: dict[str, str] = {}
+    for line in checksum_path.read_text(encoding="ascii").splitlines():
+        match = re.fullmatch(r"([0-9a-f]{64})  ([^/\\]+)", line)
+        if not match or match.group(2) in entries:
+            raise FirmwareError(f"invalid bundle checksum entry: {line}")
+        entries[match.group(2)] = match.group(1)
+    if set(entries) != set(expected_files):
+        raise FirmwareError("bundle checksum inventory does not match expected files")
+    for name, expected in entries.items():
+        path = bundle / name
+        if not path.is_file() or path.is_symlink():
+            raise FirmwareError(f"invalid bundle file: {path}")
+        if sha256_file(path) != expected:
+            raise FirmwareError(f"bundle checksum mismatch: {name}")
+
+
+def write_bundle_checksums(bundle: Path, files: list[str]) -> None:
+    content = "".join(f"{sha256_file(bundle / name)}  {name}\n" for name in files)
+    (bundle / BUNDLE_CHECKSUM_FILE).write_text(
+        content, encoding="ascii", newline="\n"
+    )
+
+
+def verify_reproducibility(reference: Path, rebuild: Path) -> dict[str, object]:
+    reference_files = firmware_bundle_files(reference, include_reproducibility=False)
+    rebuild_files = firmware_bundle_files(rebuild, include_reproducibility=False)
+    if reference_files != rebuild_files:
+        raise FirmwareError("rebuild bundle inventory differs from reference")
+
+    expected_inventory = set(reference_files) | {BUNDLE_CHECKSUM_FILE}
+    for bundle in (reference, rebuild):
+        actual_inventory = {path.name for path in bundle.iterdir()}
+        if actual_inventory != expected_inventory:
+            raise FirmwareError(f"unexpected firmware bundle inventory: {bundle}")
+        verify_bundle_checksums(bundle, reference_files)
+
+    differing = [
+        name
+        for name in sorted(expected_inventory)
+        if (reference / name).read_bytes() != (rebuild / name).read_bytes()
+    ]
+    if differing:
+        raise FirmwareError(
+            "firmware rebuild is not byte-identical: " + ", ".join(differing)
+        )
+
+    try:
+        manifest = json.loads(
+            (reference / "manifest.json").read_text(encoding="utf-8")
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise FirmwareError(f"invalid firmware manifest: {error}") from error
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("artifact"), dict):
+        raise FirmwareError("invalid firmware manifest structure")
+    image_name = reference_files[0]
+    image_sha256 = sha256_file(reference / image_name)
+    if manifest.get("artifact", {}).get("sha256") != image_sha256:
+        raise FirmwareError("manifest firmware digest does not match rebuilt image")
+
+    document: dict[str, object] = {
+        "schema": 1,
+        "builds_compared": 2,
+        "byte_identical": True,
+        "compared_files": sorted(expected_inventory),
+        "image": {"filename": image_name, "sha256": image_sha256},
+        "source": manifest.get("source"),
+        "builder": manifest.get("builder"),
+        "timestamp": manifest.get("artifact", {}).get("timestamp"),
+    }
+    report_content = json.dumps(document, indent=2, sort_keys=True) + "\n"
+    for bundle in (reference, rebuild):
+        (bundle / REPRODUCIBILITY_REPORT_FILE).write_text(
+            report_content, encoding="utf-8", newline="\n"
+        )
+        final_files = firmware_bundle_files(bundle, include_reproducibility=True)
+        write_bundle_checksums(bundle, final_files)
+        verify_bundle_checksums(bundle, final_files)
+
+    final_inventory = expected_inventory | {REPRODUCIBILITY_REPORT_FILE}
+    if any(
+        (reference / name).read_bytes() != (rebuild / name).read_bytes()
+        for name in final_inventory
+    ):
+        raise FirmwareError("sealed reproducibility bundles differ")
+    return document
+
+
 def verify_image(
     image: Path,
     manifest: Path,
@@ -1421,6 +1637,10 @@ def build_parser() -> argparse.ArgumentParser:
     verify_kernel.add_argument("--cpu-frequency", required=True, choices=CPU_FREQUENCIES)
     verify_kernel.add_argument("--report", required=True, type=Path)
 
+    verify_rebuild = subparsers.add_parser("verify-reproducibility")
+    verify_rebuild.add_argument("reference", type=Path)
+    verify_rebuild.add_argument("rebuild", type=Path)
+
     validate_lock = subparsers.add_parser("validate-lock")
     validate_lock.add_argument("lock", type=Path)
 
@@ -1478,6 +1698,10 @@ def main() -> int:
                 arguments.kernel_config, arguments.cpu_frequency, arguments.report
             )
             print(f"verified kernel config: {arguments.kernel_config}")
+            return 0
+        if arguments.command == "verify-reproducibility":
+            verify_reproducibility(arguments.reference, arguments.rebuild)
+            print(f"verified reproducible firmware bundle: {arguments.reference}")
             return 0
         if arguments.command == "validate-lock":
             load_lock(arguments.lock)

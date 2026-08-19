@@ -121,6 +121,21 @@ jobs:
           OUTPUT_DIR: ${{ runner.temp }}/firmware-bundle
         run: bash scripts/build-firmware.sh
 
+      - name: Rebuild and verify reproducibility
+        timeout-minutes: 45
+        env:
+          ADMIN_PASSWORD_FILE: ${{ runner.temp }}/admin-password
+          WIFI_PASSWORD_FILE: ${{ runner.temp }}/wifi-password
+          BUILD_ROOT: ${{ runner.temp }}/cleanpadavan-rebuild
+          CACHE_DIR: ${{ runner.temp }}/cleanpadavan-cache
+          OUTPUT_DIR: ${{ runner.temp }}/firmware-rebuild
+        run: |
+          bash scripts/build-firmware.sh
+          python3 tools/firmware.py verify-reproducibility \
+            "$RUNNER_TEMP/firmware-bundle" \
+            "$RUNNER_TEMP/firmware-rebuild"
+          (cd "$RUNNER_TEMP/firmware-bundle" && sha256sum --check SHA256SUMS)
+
       - name: Upload verified bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

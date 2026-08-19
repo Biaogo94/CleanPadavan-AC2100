@@ -1,4 +1,6 @@
+import hashlib
 import json
+import shutil
 import subprocess
 import struct
 import sys
@@ -439,6 +441,37 @@ class SourcePreparationTests(unittest.TestCase):
                 "\t\tcase ask_all:\n\t\t\tfflush(stdout);\n"
                 "\t\t\tfgets(line, 128, stdin);\n\t\t\tstrip(line);\n",
             ),
+            "busybox_confdata": (
+                "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/confdata.c",
+                "\tsym = sym_lookup(\"KERNELVERSION\", 0);\n"
+                "\tsym_calc_value(sym);\n"
+                "\ttime(&now);\n"
+                "\tenv = getenv(\"KCONFIG_NOTIMESTAMP\");\n"
+                "\t\t\t\tstrftime(buf, sizeof(buf), \"#define AUTOCONF_TIMESTAMP \"\n"
+                "\t\t\t\t\t\"\\\"%Y-%m-%d %H:%M:%S %Z\\\"\\n\", localtime(&now));\n"
+                "\t\t\t/* if user has Factory timezone or some other odd install, the\n"
+                "\t\t\t * %Z above will overflow the string leaving us with undefined\n"
+                "\t\t\t * results ... so let's try again without the timezone.\n"
+                "\t\t\t */\n"
+                "\t\t\tif (ret == 0)\n"
+                "\t\t\t\tstrftime(buf, sizeof(buf), \"#define AUTOCONF_TIMESTAMP \"\n"
+                "\t\t\t\t\t\"\\\"%Y-%m-%d %H:%M:%S\\\"\\n\", localtime(&now));\n",
+            ),
+            "mksquashfs": (
+                "trunk/tools/mksquashfs_xz/squashfs-4.3/mksquashfs.c",
+                "long long global_uid = -1, global_gid = -1;\n\n"
+                "/* superblock attributes */\n"
+                "\tbase->mtime = buf->st_mtime;\n"
+                "\t\tbuf.st_uid = getuid();\n"
+                "\t\tbuf.st_gid = getgid();\n"
+                "\t\tbuf.st_mtime = time(NULL);\n"
+                "\t\tbuf.st_dev = 0;\n"
+                "\t\tbuf.st_rdev = makedev(pseudo_ent->dev->major,\n"
+                "\t\t\tpseudo_ent->dev->minor);\n"
+                "\t\tbuf.st_mtime = time(NULL);\n"
+                "\t\tbuf.st_ino = pseudo_ino ++;\n"
+                "\tsBlk.mkfs_time = time(NULL);\n",
+            ),
             "busybox_mconf": (
                 "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/mconf.c",
                 "\tpipe(pipefd);\n"
@@ -804,7 +837,17 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertTrue(
                 document["host_build_hardening"]["generated_output_close_checked"]
             )
-            self.assertEqual(document["image_build_hardening"]["exact_source_patches"], 10)
+            self.assertEqual(document["image_build_hardening"]["exact_source_patches"], 17)
+            self.assertTrue(
+                document["image_build_hardening"][
+                    "busybox_timestamp_from_source_epoch"
+                ]
+            )
+            self.assertTrue(
+                document["image_build_hardening"][
+                    "squashfs_timestamps_from_source_epoch"
+                ]
+            )
             self.assertTrue(
                 document["image_build_hardening"][
                     "lzma_string_search_checks_all_characters"
@@ -874,6 +917,15 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertIn("&& ferror(fp_target)", split_include)
             busybox_conf = paths["busybox_conf"].read_text(encoding="utf-8")
             self.assertEqual(busybox_conf.count("if (!fgets(line, 128, stdin))"), 2)
+            busybox_confdata = paths["busybox_confdata"].read_text(encoding="utf-8")
+            self.assertIn('getenv("SOURCE_DATE_EPOCH")', busybox_confdata)
+            self.assertIn("%Y-%m-%d %H:%M:%S UTC", busybox_confdata)
+            self.assertIn("gmtime(&now)", busybox_confdata)
+            self.assertNotIn("localtime(&now)", busybox_confdata)
+            mksquashfs = paths["mksquashfs"].read_text(encoding="utf-8")
+            self.assertIn("static time_t reproducible_time(void)", mksquashfs)
+            self.assertEqual(mksquashfs.count("reproducible_time();"), 4)
+            self.assertNotIn("base->mtime = buf->st_mtime", mksquashfs)
             busybox_mconf = paths["busybox_mconf"].read_text(encoding="utf-8")
             self.assertIn("if (pipe(pipefd))", busybox_mconf)
             self.assertIn("if (write(fd, text, len) != len)", busybox_mconf)
@@ -1157,6 +1209,134 @@ class FirmwareVerificationTests(unittest.TestCase):
         header_crc = zlib.crc32(header)
         header = header[:4] + struct.pack(">I", header_crc) + header[8:]
         path.write_bytes(header + payload)
+
+    @staticmethod
+    def write_bundle(path: Path) -> None:
+        path.mkdir()
+        image_name = "RM2100_3.4.test-cpu-bootloader.trx"
+        image = path / image_name
+        image.write_bytes(b"deterministic firmware image")
+        metadata = {
+            "manifest.json": json.dumps(
+                {
+                    "artifact": {
+                        "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+                        "timestamp": 1623679775,
+                    },
+                    "builder": {
+                        "commit": "0123456789abcdef0123456789abcdef01234567"
+                    },
+                    "source": {
+                        "commit": "23387b278a7cf728748af606760758f5d59d1451"
+                    },
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            "build-lock.json": "{}\n",
+            "rm2100-3.4.config": "CONFIG_LINUXDIR=linux-3.4.x\n",
+            "kernel-3.4.config": "CONFIG_SMP=y\n",
+            "performance-profile.json": "{}\n",
+            "runtime-policy.json": "{}\n",
+            "build-warning-policy.json": "{}\n",
+        }
+        for name, content in metadata.items():
+            (path / name).write_text(content, encoding="utf-8", newline="\n")
+        checksummed = [image_name, *metadata]
+        (path / "SHA256SUMS").write_text(
+            "".join(
+                f"{hashlib.sha256((path / name).read_bytes()).hexdigest()}  {name}\n"
+                for name in checksummed
+            ),
+            encoding="ascii",
+            newline="\n",
+        )
+
+    def test_verify_reproducibility_seals_byte_identical_bundles(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            reference = directory / "reference"
+            rebuild = directory / "rebuild"
+            self.write_bundle(reference)
+            shutil.copytree(reference, rebuild)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(FIRMWARE_TOOL),
+                    "verify-reproducibility",
+                    str(reference),
+                    str(rebuild),
+                ],
+                cwd=REPOSITORY,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(
+                (reference / "reproducibility-policy.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(report["byte_identical"])
+            self.assertEqual(report["builds_compared"], 2)
+            self.assertEqual(report["image"]["filename"], "RM2100_3.4.test-cpu-bootloader.trx")
+            self.assertEqual(
+                (reference / "reproducibility-policy.json").read_bytes(),
+                (rebuild / "reproducibility-policy.json").read_bytes(),
+            )
+            self.assertEqual(
+                (reference / "SHA256SUMS").read_bytes(),
+                (rebuild / "SHA256SUMS").read_bytes(),
+            )
+            self.assertEqual(len((reference / "SHA256SUMS").read_text().splitlines()), 9)
+
+    def test_verify_reproducibility_rejects_a_different_rebuild(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            reference = directory / "reference"
+            rebuild = directory / "rebuild"
+            self.write_bundle(reference)
+            self.write_bundle(rebuild)
+            (rebuild / "runtime-policy.json").write_text(
+                '{"drift": true}\n', encoding="utf-8", newline="\n"
+            )
+            checksummed = [
+                "RM2100_3.4.test-cpu-bootloader.trx",
+                "manifest.json",
+                "build-lock.json",
+                "rm2100-3.4.config",
+                "kernel-3.4.config",
+                "performance-profile.json",
+                "runtime-policy.json",
+                "build-warning-policy.json",
+            ]
+            (rebuild / "SHA256SUMS").write_text(
+                "".join(
+                    f"{hashlib.sha256((rebuild / name).read_bytes()).hexdigest()}  {name}\n"
+                    for name in checksummed
+                ),
+                encoding="ascii",
+                newline="\n",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(FIRMWARE_TOOL),
+                    "verify-reproducibility",
+                    str(reference),
+                    str(rebuild),
+                ],
+                cwd=REPOSITORY,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("not byte-identical", result.stderr)
+            self.assertFalse((reference / "reproducibility-policy.json").exists())
 
     def test_verify_image_emits_a_manifest_for_valid_rm2100_firmware(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

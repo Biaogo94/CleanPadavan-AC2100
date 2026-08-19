@@ -14,6 +14,7 @@ A successful GitHub Actions run creates a Release Candidate, not a Production Re
 | Compiler warnings | `build-warning-policy.json` | Every enforced high-risk warning category and the unknown-warning count are zero; each audited legacy category stays at or below its fixed limit |
 | Provisioning | Build log and deployment record | No universal defaults; secrets absent from logs |
 | Image integrity | `manifest.json` and `SHA256SUMS` | uImage header/data CRC, RM2100, 3.4, SHA-256 pass |
+| Reproducibility | `reproducibility-policy.json` and second clean build | Two builds using the same locked source, profile and provisioning inputs are byte-identical; the sealed bundle hashes all nine payload files |
 | CI | GitHub Actions run URL | Tests and full firmware build pass |
 | Recovery | Hardware qualification | Breed recovery and rollback image tested |
 | Stability | Hardware qualification | 72-hour soak, 50 cold boots, no crash or persistent corruption |

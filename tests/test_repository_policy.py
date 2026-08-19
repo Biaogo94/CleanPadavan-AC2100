@@ -66,6 +66,12 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("runtime-policy.json", build_script)
         self.assertIn("build-warning-policy.json", build_script)
         self.assertIn("export LC_ALL=C", build_script)
+        self.assertIn("export KBUILD_BUILD_TIMESTAMP", build_script)
+        self.assertIn("export KBUILD_BUILD_USER=cleanpadavan", build_script)
+        self.assertIn("export KBUILD_BUILD_HOST=reproducible", build_script)
+        self.assertIn("export KBUILD_BUILD_VERSION=1", build_script)
+        self.assertIn("verify-reproducibility", workflow)
+        self.assertIn("firmware-rebuild", workflow)
         self.assertIn("cpu-900mhz", build_script)
 
 

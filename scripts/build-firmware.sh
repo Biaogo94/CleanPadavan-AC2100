@@ -43,7 +43,7 @@ download_checked() {
   mv -- "$temporary" "$target"
 }
 
-for command_name in curl fakeroot find git sha256sum tar tee; do
+for command_name in curl date fakeroot find git sha256sum tar tee; do
   require_command "$command_name"
 done
 
@@ -62,7 +62,13 @@ TOOLCHAIN_URL="$(lock_value archives.toolchain.url)"
 TOOLCHAIN_SHA256="$(lock_value archives.toolchain.sha256)"
 OPENSSL_URL="$(lock_value archives.openssl.url)"
 OPENSSL_SHA256="$(lock_value archives.openssl.sha256)"
+KBUILD_BUILD_TIMESTAMP="$(date --utc --date="@$SOURCE_DATE_EPOCH" '+%a %b %d %H:%M:%S UTC %Y')"
 export SOURCE_DATE_EPOCH
+export TZ=UTC
+export KBUILD_BUILD_TIMESTAMP
+export KBUILD_BUILD_USER=cleanpadavan
+export KBUILD_BUILD_HOST=reproducible
+export KBUILD_BUILD_VERSION=1
 
 if [[ -z "${BUILD_ROOT:-}" ]]; then
   BUILD_ROOT="$(mktemp -d -t cleanpadavan-rm2100.XXXXXXXX)"
