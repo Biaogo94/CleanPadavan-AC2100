@@ -1,0 +1,42 @@
+{
+  "mode": "aggressive",
+  "version": "experimental-2024",
+  "warnings": [
+    "UNTESTED - May damage hardware through overheating",
+    "CPU overclocked to 1000 MHz without thermal validation",
+    "Hardware NAT enabled (known instability with PPPoE/VPN)",
+    "Aggressive wireless settings (client compatibility issues possible)",
+    "Increased memory usage (OOM risk on 128MB device)",
+    "Regulatory compliance NOT verified"
+  ],
+  "kernel_options": {
+    "CONFIG_RALINK_MT7621_PLL1000": "y",
+    "CONFIG_RA_HW_NAT": "y",
+    "CONFIG_RAETH_QDMA": "y",
+    "CONFIG_HZ": "250",
+    "CONFIG_NF_CONNTRACK_MAX": "65536"
+  },
+  "sysctl_tuning": {
+    "net.netfilter.nf_conntrack_max": "65536",
+    "net.netfilter.nf_conntrack_buckets": "16384",
+    "net.ipv4.tcp_fastopen": "3",
+    "net.core.netdev_max_backlog": "5000",
+    "vm.swappiness": "0"
+  },
+  "compiler_optimizations": {
+    "CFLAGS_EXTRA": "-O3 -march=mips32r2 -mtune=1004kc -flto -funroll-loops",
+    "LDFLAGS_EXTRA": "-flto -Wl,-O2"
+  },
+  "expected_improvements": {
+    "routing_throughput": "+20-40% theoretical",
+    "cpu_usage": "-10-20% under load",
+    "latency": "-5-15%",
+    "concurrent_connections": "4x (16k -> 64k)"
+  },
+  "known_risks": {
+    "thermal": "May exceed 85°C under load",
+    "stability": "Possible kernel panics under memory pressure",
+    "compatibility": "PPPoE/VPN may disconnect randomly",
+    "regulatory": "May violate local RF regulations"
+  }
+}
