@@ -15,7 +15,7 @@ The RM2100 kernel already enables NAPI, GRO, BQL, QDMA transmit, checksum offloa
 
 The clean-NVRAM runtime default is SFE mode 1. It accelerates established TCP/UDP flows while leaving `skip_to_bridge_ingress=0`, so the experimental bridge shortcut described by the upstream SFE source remains disabled. The source patch also rechecks `fast_classifier` after every load or unload. A failed load restores `nf_conntrack_tcp_be_liberal=1` and `nf_conntrack_tcp_no_window_check=1` instead of leaving conntrack in a stricter half-configured state.
 
-Hardware NAT remains disabled by default for the MT7615 path, matching upstream policy. QDMA receive, hardware-NAT Wi-Fi offload and a lower SFE offload threshold are not enabled without packet-loss, reconnect and long-soak evidence. They change driver concurrency or allocate acceleration state more aggressively and are not justified by a compile-only result.
+The production profile keeps Hardware NAT disabled by default for the MT7615 path, matching upstream policy. This branch's explicit experimental profile is different: it keeps the upstream `CONFIG_RA_HW_NAT=m` / `HNAT_V2` module and changes the clean-NVRAM runtime default to `hw_nat_mode=4`, enabling IPv4, Wi-Fi and UDP offload. The bundle records that choice and the release remains hardware-unqualified. PPPoE, VPN, packet-loss, reconnect and long-soak evidence are mandatory before deployment. No bridge ingress bypass or compiler flag override is included.
 
 ## Wireless and memory
 
