@@ -45,7 +45,7 @@ download_checked() {
   mv -- "$temporary" "$target"
 }
 
-for command_name in curl date fakeroot find git sha256sum tar tee; do
+for command_name in curl date fakeroot find git sha256sum tar tee touch; do
   require_command "$command_name"
 done
 
@@ -120,6 +120,10 @@ cp -- "$OPENSSL_ARCHIVE" "$SOURCE_DIR/trunk/libs/libssl/openssl-1.1.1w.tar.gz"
   --profile "$RENDERED_PROFILE" \
   --admin-password-file "$ADMIN_PASSWORD_FILE" \
   --wifi-password-file "$WIFI_PASSWORD_FILE"
+# Older 3.4 build tools still inspect source mtimes in a few generated files.
+# Normalize the complete patched checkout before invoking make so clean rebuilds
+# have the same timestamp inputs regardless of runner filesystem behavior.
+find "$SOURCE_DIR" -exec touch -h --date="@$SOURCE_DATE_EPOCH" {} +
 "$PYTHON" "$REPOSITORY/tools/firmware.py" verify-source-policy "$SOURCE_DIR" \
   --report "$BUILD_ROOT/runtime-policy.json"
 
