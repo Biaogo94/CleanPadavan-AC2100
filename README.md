@@ -1,46 +1,68 @@
-# Redmi AC2100 Padavan Firmware Builder
+# Redmi AC2100 Padavan 3.4 Firmware Builder
 
-基于 GitHub Actions 的 **Redmi AC2100** Padavan 固件自动构建脚本。专为追求极致纯净和高性能的用户设计。
+本仓库只构建 Redmi AC2100（`RM2100`）的 Padavan Linux 3.4 固件。构建输入、工具链和 HTTPS 依赖均由 Source Lock 固定并校验；构建完成后会验证 uImage 头、CRC、设备型号、内核版本和时间戳，再生成带 SHA-256 的 Firmware Bundle。
 
-## ✨ 特性 (Features)
+## 当前状态
 
-  * **双版本支持**：启动构建时可选 **3.4 (hanwckf/稳定版)** 或 **4.4 (MeIsReallyBa/新内核版)**。
-  * **极致纯净**：自动移除 Aria2、Transmission、各类 VPN 等冗余插件，只保留核心路由功能。
-  * **性能优化**：强制开启 **Hardware NAT (Flow Offload)**，确保千兆跑满，降低 CPU 占用。
-  * **环境修复**：基于 Ubuntu 22.04，修复了旧版构建脚本在 CI 环境下的依赖和路径问题。
+构建和发布工程采用自动化软件门禁，不把机器测试作为发布前置条件。发布产物会经过源码策略、完整编译、镜像完整性和两次干净构建一致性校验；它不代表已经在每台路由器上完成温度、无线或长时间负载验证。Linux 3.4 和 OpenSSL 1.1.1 均已停止上游支持，部署者必须承担漏洞回补和管理面隔离责任。
 
-## 🚀 如何使用 (How to Use)
+## 固件策略
 
-1.  **Fork** 本仓库到你的 GitHub 账号。
-2.  进入仓库的 **Actions** 页面。
-3.  点击左侧的 **Build Redmi AC2100 Padavan**。
-4.  点击右侧的 **Run workflow** 按钮。
-5.  在下拉菜单中选择你需要的固件版本：
-      * `3.4 (hanwckf)`：无线驱动稳定，适合日常使用。
-      * `4.4 (MeIsReallyBa)`：内核较新，支持更多特性。
-6.  等待编译完成（约 15-20 分钟），在 **Artifacts** 处下载固件。
+启用：
 
-## ⚙️ 默认配置 (Default Settings)
+- RM2100 / MT7621，2.4 GHz `4.1` 与 5 GHz `5.0.5.1` 驱动
+- 2.4 GHz 与 5 GHz 默认使用澳大利亚 `AU` 地区码，由驱动按 AU 信道、功率限制和设备校准表工作
+- 构建时选择 MT7621 启动引导器时钟（默认），或由 3.4 内核强制 `800`、`900`、`1000 MHz`
+- SFE 软件快速转发默认使用模式 1；保留 Linux bridge 检查，不启用实验性 bridge ingress bypass
+- IPv6、IPSet、中文 WebUI
+- 仅 HTTPS 的管理界面
 
-  * **管理地址**: `192.168.123.1`
-  * **用户名**: `admin`
-  * **密码**: `admin`
-  * **WiFi 密码**: `1234567890`
+关闭：
 
-## 🛠️ 修改说明 (Customization)
+- SSH、Telnet、FTP、Samba、VPN、代理、下载器、ttyd
+- vlmcsd、socat、srelay、tcpdump、iperf3 等非核心程序
+- USB 与 CPU sleep 实验选项
 
-如果需要恢复部分插件，请修改 `.github/workflows/build-padavan.yml` 文件中 `Run Compilation Logic` 下的 `sed` 替换命令：
+完整策略见 [`config/rm2100-3.4.config`](config/rm2100-3.4.config)。任何未批准的 `=y` 选项都会让验证失败。
+
+## GitHub Actions 构建
+
+在 Actions 中手动运行 **Build RM2100 Padavan 3.4**，在 `cpu_frequency` 选择 `bootloader`、`800`、`900` 或 `1000`。`release_version` 可留空，此时自动使用 `YYYYMMDD.<run_number>`；也可手动填写同格式版本号。源码校验、两次完整构建、镜像校验和可复现性比较全部成功后，workflow 会自动创建对应 GitHub Release，同时保留 `rm2100-3.4-cpu-<mode>-<run>-<attempt>` Artifact。PR、push 和定时任务只构建 Artifact，不发布 Release。公开仓库不需要配置密码 Secrets。
+
+锁定的 3.4 源码会为三个固定频率设置完整 PLL FBDIV 字段，构建器同时验证 Firmware Profile、源码策略和最终内核配置。`bootloader` 是默认且最保守的选择；`1000` 属于可选超频档，可能增加功耗、温度和个体设备不稳定风险。`AU` 地区码不会绕过驱动的法规限制或 EEPROM / SingleSKU 校准；仅应在符合当地法规的部署中使用。
+
+刷机并清空旧 NVRAM 后，AU 默认提供 2.4 GHz 信道 1-13，以及 5 GHz 信道 36-48、149-165；双频 `TxPower` 默认均为 100%，实际射频输出仍受驱动法规表与设备校准限制。SFE 默认值也只在新 NVRAM 上生效，升级保留旧 NVRAM 时应在 WebUI 核对。启动后可从系统日志中的 `CPU/OCP/SYS frequency` 行核对实际 CPU 时钟；不能只凭固件文件名判断运行频率。
+
+RM2100 的 MT7615 路径按上游策略保持硬件 NAT 关闭，使用 SFE mode 1 加速持续 TCP/UDP 转发。模块加载或卸载后会重新读取真实状态；加载失败会恢复 conntrack 参数并写入系统日志。源码决策、未采用的激进参数和测量方法见 [性能与稳定性设计](docs/PERFORMANCE.md)。
+
+正式发布仍通过 GitHub `production` Environment 的人工审批规则。公开默认密码是易用性取舍，管理界面保持仅 LAN HTTPS，SSH 与 Telnet 默认关闭；用户必须在首次登录后修改后台密码和两个无线网络的密码。
+
+## 本地 Linux 构建
+
+安装 `.github/workflows/build.yml` 中列出的 Ubuntu 22.04 依赖，然后：
 
 ```bash
-# 将 =n 改为 =y 即可启用插件
-sed -i 's/CONFIG_FIRMWARE_INCLUDE_ARIA=n/CONFIG_FIRMWARE_INCLUDE_ARIA=y/g' $TEMPLATE_PATH
+CPU_FREQUENCY=bootloader \
+bash scripts/build-firmware.sh
 ```
 
-## 🔗 致谢 (Credits)
+`CPU_FREQUENCY` 接受 `bootloader`、`800`、`900` 或 `1000`，省略时使用 `bootloader`。默认读取仓库内公开密码文件；高级用户仍可用 `ADMIN_PASSWORD_FILE` 和 `WIFI_PASSWORD_FILE` 指向自定义文件。默认输出在 `dist/`，包含固件、`manifest.json`、Source Lock、实际 Firmware Profile、最终 `kernel-3.4.config`、`performance-profile.json`、`runtime-policy.json`、`build-warning-policy.json` 和 `SHA256SUMS`。
 
-  * [hanwckf/rt-n56u](https://github.com/hanwckf/rt-n56u)
-  * [MeIsReallyBa/padavan-4.4](https://github.com/MeIsReallyBa/padavan-4.4)
+## 首次部署
 
------
+- 默认地址：`https://192.168.2.1`
+- 默认后台用户名：`admin`
+- 默认后台密码：`admin`
+- 2.4 GHz 与 5 GHz 默认 Wi-Fi 密码：`1234567890`
+- 首次登录后立即修改后台密码和两个 Wi-Fi 密码
+- 禁止从 WAN 暴露管理界面
+- 使用 Breed 或等价恢复环境，并在升级前导出当前可回滚镜像
 
-**免责声明**: 刷机有风险，请在 Breed 下进行刷写。本仓库仅提供构建脚本，不对固件使用造成的后果负责。
+自动化发布门槛与回滚要求见 [生产门槛](docs/PRODUCTION.md)。如部署者需要额外实机证据，可选用 [硬件验收记录](docs/HARDWARE-QUALIFICATION.md)，它不属于本项目的构建发布门槛。
+
+## 上游与许可
+
+- 固件源码：[hanwckf/rt-n56u](https://github.com/hanwckf/rt-n56u)
+- 工具链：[hanwckf/padavan-toolchain](https://github.com/hanwckf/padavan-toolchain)
+
+本仓库采用 Apache-2.0；上游源码和各依赖保留其各自许可证。刷写第三方固件存在变砖和数据丢失风险。

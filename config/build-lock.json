@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "source": {
+    "url": "https://github.com/hanwckf/rt-n56u.git",
+    "commit": "23387b278a7cf728748af606760758f5d59d1451",
+    "source_date_epoch": 1623679775
+  },
+  "archives": {
+    "toolchain": {
+      "url": "https://github.com/hanwckf/padavan-toolchain/releases/download/v1.1/mipsel-linux-uclibc.tar.xz",
+      "sha256": "737476a822e43c3d76be36bc6343c8a8a351e3bdd3861f34e914dfe9df90d347"
+    },
+    "openssl": {
+      "url": "https://github.com/openssl/openssl/releases/download/OpenSSL_1_1_1w/openssl-1.1.1w.tar.gz",
+      "sha256": "cf3098950cb4d853ad95c0841f1f9c6d3dc102dccfcacd521d93925208b76ac8"
+    }
+  }
+}
