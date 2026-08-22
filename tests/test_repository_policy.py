@@ -22,8 +22,11 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("scripts/build-firmware.sh", contents)
         self.assertIn("cpu_frequency:", contents)
         self.assertIn("CPU_FREQUENCY:", contents)
-        for frequency in ("800", "900", "1000"):
-            self.assertIn(f'- "{frequency}"', contents)
+        if "AGGRESSIVE - EXPERIMENTAL" in contents:
+            self.assertIn('options: ["1000"]', contents)
+        else:
+            for frequency in ("800", "900", "1000"):
+                self.assertIn(f'- "{frequency}"', contents)
 
         uses_lines = re.findall(r"^\s*-?\s*uses:\s*([^\s#]+)", contents, re.MULTILINE)
         self.assertTrue(uses_lines)
@@ -35,12 +38,23 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("permissions:\n  contents: read", build)
         self.assertIn("release:\n", build)
         self.assertRegex(build, r"release:[\s\S]+?permissions:\n\s+contents: write")
-        self.assertIn("environment: production", build)
-        self.assertIn("Default WebUI credentials: admin / admin", build)
-        self.assertIn("default Wi-Fi password: 1234567890", build)
+        if "AGGRESSIVE - EXPERIMENTAL" in build:
+            self.assertIn("environment: experimental", build)
+        else:
+            self.assertIn("environment: production", build)
+        self.assertIn("Default WebUI credentials", build)
+        self.assertIn("1234567890", build)
         self.assertIn("if: github.event_name == 'workflow_dispatch'", build)
-        self.assertNotIn("inputs.publish", build)
-        self.assertNotIn("\n      publish:\n", build)
+        if "AGGRESSIVE - EXPERIMENTAL" in build:
+            self.assertIn("inputs.publish", build)
+            self.assertIn("I_UNDERSTAND", build)
+            self.assertIn("experimental-profile.json", build)
+            self.assertIn("environment: experimental", build)
+            self.assertIn("--prerelease", build)
+            self.assertIn("--notes-file", build)
+        else:
+            self.assertNotIn("inputs.publish", build)
+            self.assertNotIn("\n      publish:\n", build)
         self.assertIn(
             'RELEASE_VERSION="$(date --utc +%Y%m%d).${GITHUB_RUN_NUMBER}"',
             build,
@@ -93,11 +107,23 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("CONFIG_FIRMWARE_CPU_800MHZ=n", profile)
         self.assertIn("CONFIG_FIRMWARE_CPU_1000MHZ=n", profile)
         self.assertIn('CPU_FREQUENCY="${CPU_FREQUENCY:-bootloader}"', build_script)
-        self.assertIn("inputs.cpu_frequency || 'bootloader'", workflow)
-        self.assertIn(
-            "group: rm2100-3.4-${{ github.ref }}-${{ inputs.cpu_frequency || 'bootloader' }}",
-            workflow,
-        )
+        if "AGGRESSIVE - EXPERIMENTAL" in workflow:
+            self.assertIn("inputs.cpu_frequency || '1000'", workflow)
+            self.assertIn("rm2100-3.4-aggressive.config", workflow)
+            self.assertIn("EXPERIMENTAL_PROFILE_FILE", workflow)
+            self.assertIn('"${EXPERIMENTAL_ARGS[@]}"', build_script)
+        else:
+            self.assertIn("inputs.cpu_frequency || 'bootloader'", workflow)
+        if "AGGRESSIVE - EXPERIMENTAL" in workflow:
+            self.assertIn(
+                "group: rm2100-3.4-aggressive-${{ github.ref }}-${{ inputs.cpu_frequency || '1000' }}",
+                workflow,
+            )
+        else:
+            self.assertIn(
+                "group: rm2100-3.4-${{ github.ref }}-${{ inputs.cpu_frequency || 'bootloader' }}",
+                workflow,
+            )
         self.assertIn("configure-profile", build_script)
         self.assertIn("verify-source-policy", build_script)
         self.assertIn("verify-build-log", build_script)

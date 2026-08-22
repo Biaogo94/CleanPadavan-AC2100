@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "mode": "aggressive",
+  "status": "experimental",
+  "base_profile": "rm2100-3.4-aggressive.config",
+  "cpu_frequency": "1000",
+  "features": {
+    "hardware_nat": {
+      "enabled": true,
+      "runtime_mode": 4,
+      "kernel_module": "CONFIG_RA_HW_NAT=m",
+      "hnat_version": "HNAT_V2",
+      "wifi_offload": true,
+      "ipv6_offload": true
+    },
+    "sfe": {
+      "enabled": true,
+      "default_mode": 1
+    },
+    "ethernet": {
+      "qdma": true,
+      "checksum_offload": true,
+      "scatter_gather_tx": true,
+      "tso": true,
+      "tso_ipv6": true
+    },
+    "scheduler": {
+      "hz": 250,
+      "preemption": "none"
+    },
+    "cpu_distribution": {
+      "rps": true,
+      "xps": true,
+      "mt7621_irq_affinity": true
+    }
+  },
+  "qualification": {
+    "required": true,
+    "minimum_soak_hours": 24,
+    "must_measure": [
+      "cpu_temperature",
+      "wan_lan_throughput",
+      "pppoe_stability",
+      "vpn_compatibility",
+      "wifi_client_compatibility",
+      "kernel_oops_and_panic_logs"
+    ]
+  },
+  "disabled_until_qualified": [
+    "compiler O3/LTO overrides",
+    "unbounded conntrack increases",
+    "regulatory transmit-power overrides",
+    "bridge ingress bypass"
+  ]
+}

@@ -1,6 +1,10 @@
 # RM2100 hardware qualification record
 
-This worksheet is optional and is not a build or release gate. Copy it only when a deployment operator wants device-specific evidence; do not edit the template to claim generic qualification.
+This worksheet is required before deploying the aggressive profile. It is not an
+automated build gate: the workflow can publish a clearly marked prerelease only
+after an explicit risk acknowledgement, but that prerelease must not be deployed
+until this device-specific evidence is complete. Do not edit the template to claim
+generic qualification.
 
 ## Identity
 
@@ -33,6 +37,10 @@ This worksheet is optional and is not a build or release gate. Copy it only when
 - [ ] DHCP WAN, static WAN and PPPoE pass
 - [ ] IPv4 NAT, IPv6 routing, DNS and NTP pass
 - [ ] SFE mode 1 loads `fast_classifier`; bridge ingress bypass reports `0`
+- [ ] Aggressive profile reports `hw_nat_mode=4` and `/sys/module/hw_nat` is loaded
+- [ ] Hardware NAT IPv4 TCP/UDP flow entries are created and expire correctly
+- [ ] Hardware NAT Wi-Fi offload passes bidirectional traffic without packet loss
+- [ ] PPPoE, VPN, IPv6 and WAN reconnect tests pass with Hardware NAT enabled
 - [ ] Twenty SFE disable/enable cycles under active traffic complete without stale state or a load/unload failure log
 - [ ] 2.4 GHz and 5 GHz association, WPA2 and reconnect pass
 - [ ] Both radios report AU; 2.4 GHz exposes 1-13 and 5 GHz exposes 36-48/149-165

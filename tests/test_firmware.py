@@ -89,6 +89,59 @@ class ProfilePolicyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("valid Source Lock", result.stdout)
 
+    def test_experimental_profile_requires_explicit_hardware_nat_and_qualification(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(FIRMWARE_TOOL),
+                "validate-experimental-profile",
+                str(REPOSITORY / "config" / "aggressive-performance.json"),
+            ],
+            cwd=REPOSITORY,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            invalid = Path(temporary_directory) / "aggressive.json"
+            document = json.loads(
+                (REPOSITORY / "config" / "aggressive-performance.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            document["features"]["hardware_nat"]["runtime_mode"] = 2
+            invalid.write_text(json.dumps(document), encoding="utf-8")
+            rejected = subprocess.run(
+                [sys.executable, str(FIRMWARE_TOOL), "validate-experimental-profile", str(invalid)],
+                cwd=REPOSITORY,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("runtime mode must be 4", rejected.stderr)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            invalid = Path(temporary_directory) / "incomplete-aggressive.json"
+            document = json.loads(
+                (REPOSITORY / "config" / "aggressive-performance.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            del document["features"]["scheduler"]
+            invalid.write_text(json.dumps(document), encoding="utf-8")
+            rejected = subprocess.run(
+                [sys.executable, str(FIRMWARE_TOOL), "validate-experimental-profile", str(invalid)],
+                cwd=REPOSITORY,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("features are incomplete", rejected.stderr)
+
     def test_profile_rejects_any_device_other_than_rm2100(self) -> None:
         result = self.run_profile_validation(
             "\n".join(
@@ -826,6 +879,44 @@ class SourcePreparationTests(unittest.TestCase):
                 ).read_text(encoding="utf-8")
                 self.assertIn("reg &= ~(0x7ff);", pll_source)
                 self.assertIn("MT7621_PLL_TARGET_MHZ 1000", pll_source)
+
+    def test_prepare_source_enables_hardware_nat_only_for_experimental_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            source, admin_password, wifi_password = self.create_base_source(directory)
+            defaults = source / "trunk" / "user" / "shared" / "defaults.c"
+            defaults.write_text(
+                '\t{ "http_access", "0" },\n'
+                '\t{ "http_proto", "0" },\n'
+                '\t{ "sshd_enable", "1" },\n'
+                '\t{ "sfe_enable", "0" },\n'
+                '\t{ "hw_nat_mode", "2" },\n',
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(FIRMWARE_TOOL),
+                    "prepare-source",
+                    str(source),
+                    "--profile",
+                    str(REPOSITORY / "config" / "rm2100-3.4-aggressive.config"),
+                    "--admin-password-file",
+                    str(admin_password),
+                    "--wifi-password-file",
+                    str(wifi_password),
+                    "--experimental-profile",
+                    str(REPOSITORY / "config" / "aggressive-performance.json"),
+                ],
+                cwd=REPOSITORY,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rendered_defaults = defaults.read_text(encoding="utf-8")
+            self.assertIn('{ "hw_nat_mode", "4" },', rendered_defaults)
+            self.assertNotIn('{ "hw_nat_mode", "2" },', rendered_defaults)
 
     def test_prepare_source_restricts_the_management_plane(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
