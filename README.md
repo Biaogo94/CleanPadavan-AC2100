@@ -9,7 +9,7 @@
 | 模式 | Actions workflow | CPU 频率 | 转发加速 | 发布类型 |
 | --- | --- | --- | --- | --- |
 | 默认性能 | **Build RM2100 Padavan 3.4 (Default)** | `bootloader`、`800`、`900`、`1000 MHz` | SFE mode 1；MT7615 路径保持上游 Hardware NAT 默认关闭 | 正式 Release |
-| 激进性能 | **Build RM2100 Padavan 3.4 (Aggressive - Experimental)** | 固定 `1000 MHz` | SFE mode 1；强制 MT7621 HW NAT v2 `hw_nat_mode=4`，启用 IPv4、UDP、Wi-Fi offload，IPv6 按上游能力检查 | Pre-release |
+| 激进性能 | **Build RM2100 Padavan 3.4 (Aggressive - Experimental)** | 固定 `1000 MHz` | SFE mode 1；强制 MT7621 HW NAT v2 `hw_nat_mode=4`；32K conntrack 与有界队列调优；目标端用户态和库使用 `-O2` | Pre-release |
 
 两个 workflow 文件分别为：
 
@@ -36,6 +36,9 @@
 运行 **Build RM2100 Padavan 3.4 (Aggressive - Experimental)**：
 
 - CPU 固定为 `1000 MHz`，不提供虚假的其他频率组合。
+- 目标端用户态和库从上游 `-Os` 调整为 `-O2`，保留 `mips32r2` / `1004kc` 定向编译。
+- 默认连接跟踪数为 `32768`，`netdev_max_backlog=2048`，`somaxconn=1024`。
+- 不启用 LTO、`-O3`、`-ffast-math`、循环强展开或 Linux 3.4 不支持的 TCP Fast Open sysctl。
 - 默认 `publish=false`，成功后仅生成 Artifact。
 - 如需发布，将 `publish` 设为 `true`，并在 `confirm_risk` 输入 `I_UNDERSTAND`。
 - 发布经过独立的 GitHub `experimental` Environment，并强制创建带实验警告的 Pre-release。
@@ -59,7 +62,7 @@
 - SSH、Telnet、FTP、Samba、VPN、代理、下载器和 ttyd
 - vlmcsd、socat、srelay、tcpdump、iperf3 等非核心程序
 - USB、CPU sleep、bridge ingress bypass
-- 未验证的全局 `-O3`、LTO、无限制 conntrack 和法规发射功率覆盖
+- 未验证的全局 `-O3`、LTO、无限制 conntrack 和法规发射功率覆盖；激进配置仅使用有界的 32K conntrack 与 `-O2`
 
 完整默认配置见 [`config/rm2100-3.4.config`](config/rm2100-3.4.config)，激进配置见 [`config/rm2100-3.4-aggressive.config`](config/rm2100-3.4-aggressive.config) 与 [`config/aggressive-performance.json`](config/aggressive-performance.json)。任何未批准的选项或不一致的实验声明都会让构建失败。
 

@@ -88,6 +88,42 @@ SFE_DEFAULT_DISABLED = '\t{ "sfe_enable", "0" },'
 SFE_DEFAULT_ENABLED = '\t{ "sfe_enable", "1" },'
 HWNAT_DEFAULT_DISABLED = '\t{ "hw_nat_mode", "2" },'
 HWNAT_DEFAULT_AGGRESSIVE = '\t{ "hw_nat_mode", "4" },'
+CONNTRACK_DEFAULT_ORIGINAL = """\
+#if (BOARD_RAM_SIZE > 128)
+\t{ "nf_max_conn", "32768" },
+#elif (BOARD_RAM_SIZE > 32)
+\t{ "nf_max_conn", "16384" },
+#else
+\t{ "nf_max_conn", "8192" },
+#endif
+"""
+CONNTRACK_DEFAULT_AGGRESSIVE = """\
+#if (BOARD_RAM_SIZE > 128)
+\t{ "nf_max_conn", "32768" },
+#elif (BOARD_RAM_SIZE > 32)
+\t{ "nf_max_conn", "32768" },
+#else
+\t{ "nf_max_conn", "8192" },
+#endif
+"""
+NETWORK_QUEUE_DEFAULTS_ORIGINAL = """\
+\tfput_int("/proc/sys/net/core/rmem_max", KERNEL_NET_CORE_RMEM);
+\tfput_int("/proc/sys/net/core/wmem_max", KERNEL_NET_CORE_WMEM);
+"""
+NETWORK_QUEUE_DEFAULTS_AGGRESSIVE = """\
+\tfput_int("/proc/sys/net/core/rmem_max", KERNEL_NET_CORE_RMEM);
+\tfput_int("/proc/sys/net/core/wmem_max", KERNEL_NET_CORE_WMEM);
+\tfput_int("/proc/sys/net/core/netdev_max_backlog", 2048);
+\tfput_int("/proc/sys/net/core/somaxconn", 1024);
+"""
+COMPILER_OPTIMIZATION_ORIGINAL = "UOPT = -Os\nLOPT = -Os"
+COMPILER_OPTIMIZATION_AGGRESSIVE = "UOPT = -O2\nLOPT = -O2"
+OPENSSL_OPTIMIZATION_ORIGINAL = (
+    "COPTS = $(CPUFLAGS) -O3 $(filter-out -O%, $(CFLAGS))"
+)
+OPENSSL_OPTIMIZATION_AGGRESSIVE = (
+    "COPTS = $(CPUFLAGS) -O2 $(filter-out -O%, $(CFLAGS))"
+)
 SFE_RUNTIME_ORIGINAL = """\
 \tif (sfe_loaded && !sfe_enable) {
 \t\tmodule_smart_unload("fast_classifier", 1);
@@ -1006,7 +1042,15 @@ def load_experimental_profile(path: Path) -> dict[str, object]:
     features = document.get("features")
     if not isinstance(features, dict):
         raise FirmwareError("experimental profile features must be an object")
-    if set(features) != {"hardware_nat", "sfe", "ethernet", "scheduler", "cpu_distribution"}:
+    if set(features) != {
+        "hardware_nat",
+        "sfe",
+        "ethernet",
+        "scheduler",
+        "cpu_distribution",
+        "network_tuning",
+        "compiler",
+    }:
         raise FirmwareError("experimental profile features are incomplete or contain unknown fields")
     hardware_nat = features.get("hardware_nat")
     if not isinstance(hardware_nat, dict) or set(hardware_nat) != {
@@ -1035,6 +1079,24 @@ def load_experimental_profile(path: Path) -> dict[str, object]:
         "rps": True, "xps": True, "mt7621_irq_affinity": True,
     }:
         raise FirmwareError("aggressive CPU distribution settings are invalid")
+    network_tuning = features["network_tuning"]
+    if not isinstance(network_tuning, dict) or network_tuning != {
+        "conntrack_default": 32768,
+        "netdev_max_backlog": 2048,
+        "somaxconn": 1024,
+        "tcp_fast_open": False,
+    }:
+        raise FirmwareError("aggressive network tuning settings are invalid")
+    compiler = features["compiler"]
+    if not isinstance(compiler, dict) or compiler != {
+        "userland_optimization": "-O2",
+        "library_optimization": "-O2",
+        "architecture": "mips32r2",
+        "tune": "1004kc",
+        "lto": False,
+        "unsafe_math": False,
+    }:
+        raise FirmwareError("aggressive compiler settings are invalid")
     qualification = document.get("qualification")
     if not isinstance(qualification, dict) or set(qualification) != {
         "required", "minimum_soak_hours", "must_measure"
@@ -1042,7 +1104,8 @@ def load_experimental_profile(path: Path) -> dict[str, object]:
         raise FirmwareError("aggressive profile must require hardware qualification")
     if qualification.get("minimum_soak_hours") != 72 or qualification.get("must_measure") != [
         "cpu_temperature", "wan_lan_throughput", "pppoe_stability",
-        "vpn_compatibility", "wifi_client_compatibility", "kernel_oops_and_panic_logs",
+        "vpn_compatibility", "wifi_client_compatibility", "conntrack_memory_pressure",
+        "kernel_oops_and_panic_logs",
     ]:
         raise FirmwareError("aggressive qualification requirements are incomplete")
     if document["disabled_until_qualified"] != [
@@ -1310,7 +1373,36 @@ def prepare_source(
                 HWNAT_DEFAULT_AGGRESSIVE,
                 "aggressive HW NAT runtime default",
             )
+            runtime_content = replace_exact_once(
+                runtime_content,
+                CONNTRACK_DEFAULT_ORIGINAL,
+                CONNTRACK_DEFAULT_AGGRESSIVE,
+                "aggressive conntrack default",
+            )
         runtime_defaults.write_text(runtime_content, encoding="utf-8", newline="\n")
+
+    if experimental_profile is not None:
+        runtime_init = source / "trunk" / "user" / "rc" / "init.c"
+        if runtime_init.is_file():
+            init_content = runtime_init.read_text(encoding="utf-8")
+            init_content = replace_exact_once(
+                init_content,
+                NETWORK_QUEUE_DEFAULTS_ORIGINAL,
+                NETWORK_QUEUE_DEFAULTS_AGGRESSIVE,
+                "aggressive network queue defaults",
+            )
+            runtime_init.write_text(init_content, encoding="utf-8", newline="\n")
+
+        compiler_config = source / "trunk" / "vendors" / "Ralink" / "config.arch"
+        if compiler_config.is_file():
+            compiler_content = compiler_config.read_text(encoding="utf-8")
+            compiler_content = replace_exact_once(
+                compiler_content,
+                COMPILER_OPTIMIZATION_ORIGINAL,
+                COMPILER_OPTIMIZATION_AGGRESSIVE,
+                "aggressive target compiler optimization",
+            )
+            compiler_config.write_text(compiler_content, encoding="utf-8", newline="\n")
 
     runtime_network = source / "trunk" / "user" / "rc" / "net.c"
     if runtime_network.is_file():
@@ -1402,6 +1494,13 @@ def prepare_source(
             "\t\ttar -xf $(SRC_NAME).tar.gz; \\\n",
             "OpenSSL extraction patch recipe",
         )
+        if experimental_profile is not None:
+            openssl_content = replace_exact_once(
+                openssl_content,
+                OPENSSL_OPTIMIZATION_ORIGINAL,
+                OPENSSL_OPTIMIZATION_AGGRESSIVE,
+                "aggressive OpenSSL compiler optimization",
+            )
         openssl_makefile.write_text(openssl_content, encoding="utf-8", newline="\n")
 
 
@@ -1424,9 +1523,54 @@ def verify_source_policy(
     }
     if experimental_profile is not None:
         load_experimental_profile(experimental_profile)
+        runtime_init = source / "trunk" / "user" / "rc" / "init.c"
+        compiler_config = source / "trunk" / "vendors" / "Ralink" / "config.arch"
+        openssl_makefile = source / "trunk" / "libs" / "libssl" / "Makefile"
+        if (
+            not runtime_init.is_file()
+            or not compiler_config.is_file()
+            or not openssl_makefile.is_file()
+        ):
+            raise FirmwareError("prepared source is missing aggressive performance policy files")
+        init_content = runtime_init.read_text(encoding="utf-8")
+        compiler_content = compiler_config.read_text(encoding="utf-8")
+        openssl_content = openssl_makefile.read_text(encoding="utf-8")
         checks["aggressive HW NAT runtime default"] = (
             defaults_content.count(HWNAT_DEFAULT_AGGRESSIVE) == 2
             and HWNAT_DEFAULT_DISABLED not in defaults_content
+        )
+        checks.update(
+            {
+                "aggressive conntrack default": defaults_content.count(
+                    CONNTRACK_DEFAULT_AGGRESSIVE
+                ) == 1
+                and CONNTRACK_DEFAULT_ORIGINAL not in defaults_content,
+                "aggressive network queue defaults": init_content.count(
+                    NETWORK_QUEUE_DEFAULTS_AGGRESSIVE
+                ) == 1
+                and init_content.count(
+                    'fput_int("/proc/sys/net/core/netdev_max_backlog", 2048);'
+                ) == 1
+                and init_content.count(
+                    'fput_int("/proc/sys/net/core/somaxconn", 1024);'
+                ) == 1,
+                "aggressive target compiler optimization": compiler_content.count(
+                    COMPILER_OPTIMIZATION_AGGRESSIVE
+                ) == 1
+                and COMPILER_OPTIMIZATION_ORIGINAL not in compiler_content,
+                "aggressive OpenSSL compiler optimization": openssl_content.count(
+                    OPENSSL_OPTIMIZATION_AGGRESSIVE
+                ) == 1
+                and OPENSSL_OPTIMIZATION_ORIGINAL not in openssl_content,
+                "aggressive target architecture": (
+                    compiler_content.count("CPUFLAGS = -mips32r2 -march=mips32r2") == 1
+                    and compiler_content.count("CPUFLAGS += -mtune=1004kc") == 1
+                ),
+                "aggressive unsafe compiler flags absent": not any(
+                    flag in compiler_content + openssl_content
+                    for flag in ("-O3", "-flto", "-ffast-math", "-funroll-loops")
+                ),
+            }
         )
     source_cache: dict[str, str] = {}
     for relative_path, old, new, label in SOURCE_PATCHES:
@@ -1541,6 +1685,20 @@ def verify_source_policy(
         document["experimental"] = {
             "mode": "aggressive",
             "hardware_nat_runtime_mode": 4,
+            "network_tuning": {
+                "conntrack_default": 32768,
+                "netdev_max_backlog": 2048,
+                "somaxconn": 1024,
+                "tcp_fast_open": False,
+            },
+            "compiler": {
+                "userland_optimization": "-O2",
+                "library_optimization": "-O2",
+                "architecture": "mips32r2",
+                "tune": "1004kc",
+                "lto": False,
+                "unsafe_math": False,
+            },
             "hardware_qualification_required": True,
         }
     report.parent.mkdir(parents=True, exist_ok=True)

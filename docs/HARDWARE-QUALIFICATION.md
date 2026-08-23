@@ -40,6 +40,7 @@ generic qualification.
 - [ ] Aggressive profile reports `hw_nat_mode=4` and `/sys/module/hw_nat` is loaded
 - [ ] Hardware NAT IPv4 TCP/UDP flow entries are created and expire correctly
 - [ ] Hardware NAT Wi-Fi offload passes bidirectional traffic without packet loss
+- [ ] After a clean-NVRAM boot, `nf_max_conn=32768`; kernel sysctls report `netdev_max_backlog=2048` and `somaxconn=1024`
 - [ ] PPPoE, VPN, IPv6 and WAN reconnect tests pass with Hardware NAT enabled
 - [ ] Twenty SFE disable/enable cycles under active traffic complete without stale state or a load/unload failure log
 - [ ] 2.4 GHz and 5 GHz association, WPA2 and reconnect pass
@@ -50,6 +51,7 @@ generic qualification.
 
 - [ ] 50 cold boot cycles complete without a boot loop
 - [ ] 72-hour mixed wired/wireless soak completes without crash
+- [ ] 32K conntrack load completes without OOM, allocation failure or sustained packet loss
 - [ ] Selected CPU mode remains stable under simultaneous NAT and dual-band load
 - [ ] Repeated WAN reconnect and radio restart do not leak resources
 - [ ] NVRAM settings survive power cycles and factory reset clears them

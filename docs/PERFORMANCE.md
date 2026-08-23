@@ -15,14 +15,18 @@ The RM2100 kernel already enables NAPI, GRO, BQL, QDMA transmit, checksum offloa
 
 The clean-NVRAM runtime default is SFE mode 1. It accelerates established TCP/UDP flows while leaving `skip_to_bridge_ingress=0`, so the experimental bridge shortcut described by the upstream SFE source remains disabled. The source patch also rechecks `fast_classifier` after every load or unload. A failed load restores `nf_conntrack_tcp_be_liberal=1` and `nf_conntrack_tcp_no_window_check=1` instead of leaving conntrack in a stricter half-configured state.
 
-The production profile keeps Hardware NAT disabled by default for the MT7615 path, matching upstream policy. This branch's explicit experimental profile is different: it keeps the upstream `CONFIG_RA_HW_NAT=m` / `HNAT_V2` module and changes the clean-NVRAM runtime default to `hw_nat_mode=4`, enabling IPv4, Wi-Fi and UDP offload. The bundle records that choice and the release remains hardware-unqualified. PPPoE, VPN, packet-loss, reconnect and long-soak evidence are mandatory before deployment. No bridge ingress bypass or compiler flag override is included.
+The production profile keeps Hardware NAT disabled by default for the MT7615 path, matching upstream policy. This branch's explicit experimental profile is different: it keeps the upstream `CONFIG_RA_HW_NAT=m` / `HNAT_V2` module and changes the clean-NVRAM runtime default to `hw_nat_mode=4`, enabling IPv4, Wi-Fi and UDP offload. It also raises the clean-NVRAM conntrack default from 16,384 to a bounded 32,768, sets `netdev_max_backlog=2048`, and sets `somaxconn=1024`. These values increase burst and connection capacity without adopting the original experimental branch's unbounded 65,536-connection and 16 MiB socket-buffer claims. TCP Fast Open is not enabled because the locked Linux 3.4 source does not expose that sysctl. The bundle records every choice and the release remains hardware-unqualified. PPPoE, VPN, packet-loss, reconnect, memory-pressure and long-soak evidence are mandatory before deployment. Bridge ingress bypass remains disabled.
+
+## Target compiler policy
+
+The default build retains upstream `-Os`. The aggressive build changes only the target Ralink userland and library optimization selectors to `-O2`; the existing `-mips32r2 -march=mips32r2 -mtune=1004kc` target selection remains unchanged. Source-policy verification checks the exact prepared `config.arch` before compilation. LTO, `-O3`, `-ffast-math` and forced loop unrolling remain disabled because this legacy toolchain and mixed proprietary driver tree have no hardware or ABI qualification for them. Host build tools are not given target optimization flags.
 
 ## Wireless and memory
 
 - AU selects the regulatory path; it does not bypass EEPROM/SingleSKU calibration or regulatory power limits.
 - The 5 GHz driver retains 80 MHz, aggregation, beamforming, LDPC and the board's 4x4 stream layout. MU-MIMO remains off because it requires client-mix and soak evidence.
 - The 2.4 GHz driver retains 20/40 MHz, WMM, aggregation and the board's 2x2 layout.
-- The 128 MiB memory policy and 16,384-connection default are unchanged. Raising conntrack limits or adding swap would reduce stability margin under sustained traffic.
+- The default profile retains the 128 MiB memory policy and 16,384-connection default. The aggressive profile uses a bounded 32,768 default and must record free memory during qualification; swap remains disabled.
 
 The MT7615 5.0.5.1 SingleSKU transmit-power compensation path originally initialized its spatial-stream array index to zero and then subtracted one when spatial expansion was active. Source preparation restores the intended 1-4 stream to 0-3 index mapping and maps an invalid stream count to the conservative single-stream entry. Legal inputs keep their original calibration result, while malformed ATE input can no longer read before the compensation array.
 

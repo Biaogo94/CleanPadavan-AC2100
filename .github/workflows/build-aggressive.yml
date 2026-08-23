@@ -172,10 +172,11 @@ jobs:
           EXPERIMENTAL, hardware-unqualified build.
 
           Enabled: forced 1000 MHz CPU, MT7621 HW NAT v2 runtime mode 4,
-          SFE mode 1, QDMA/TSO/RPS/XPS baseline.
+          SFE mode 1, QDMA/TSO/RPS/XPS baseline, bounded 32K conntrack,
+          netdev backlog 2048, somaxconn 1024, and target userland/library -O2.
 
-          No O3/LTO, regulatory overrides, bridge bypass, or unbounded conntrack
-          tuning is included. Hardware qualification is required before normal use.
+          No O3/LTO/unsafe-math, regulatory overrides, bridge bypass, or unbounded
+          conntrack tuning is included. Hardware qualification is required before normal use.
 
           Default WebUI credentials: admin / admin
           Default Wi-Fi password: 1234567890

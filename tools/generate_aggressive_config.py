@@ -36,6 +36,20 @@ PROFILE = {
             "xps": True,
             "mt7621_irq_affinity": True,
         },
+        "network_tuning": {
+            "conntrack_default": 32768,
+            "netdev_max_backlog": 2048,
+            "somaxconn": 1024,
+            "tcp_fast_open": False,
+        },
+        "compiler": {
+            "userland_optimization": "-O2",
+            "library_optimization": "-O2",
+            "architecture": "mips32r2",
+            "tune": "1004kc",
+            "lto": False,
+            "unsafe_math": False,
+        },
     },
     "qualification": {
         "required": True,
@@ -46,6 +60,7 @@ PROFILE = {
             "pppoe_stability",
             "vpn_compatibility",
             "wifi_client_compatibility",
+            "conntrack_memory_pressure",
             "kernel_oops_and_panic_logs",
         ],
     },

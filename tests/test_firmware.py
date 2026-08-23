@@ -161,6 +161,56 @@ class ProfilePolicyTests(unittest.TestCase):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("qualification requirements are incomplete", rejected.stderr)
 
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            invalid = Path(temporary_directory) / "unsafe-compiler-aggressive.json"
+            document = json.loads(
+                (REPOSITORY / "config" / "aggressive-performance.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            document["features"]["compiler"] = {
+                "userland_optimization": "-O2",
+                "library_optimization": "-O2",
+                "architecture": "mips32r2",
+                "tune": "1004kc",
+                "lto": True,
+                "unsafe_math": False,
+            }
+            invalid.write_text(json.dumps(document), encoding="utf-8")
+            rejected = subprocess.run(
+                [sys.executable, str(FIRMWARE_TOOL), "validate-experimental-profile", str(invalid)],
+                cwd=REPOSITORY,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("compiler settings are invalid", rejected.stderr)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            invalid = Path(temporary_directory) / "unbounded-network-aggressive.json"
+            document = json.loads(
+                (REPOSITORY / "config" / "aggressive-performance.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            document["features"]["network_tuning"] = {
+                "conntrack_default": 65536,
+                "netdev_max_backlog": 2048,
+                "somaxconn": 1024,
+                "tcp_fast_open": False,
+            }
+            invalid.write_text(json.dumps(document), encoding="utf-8")
+            rejected = subprocess.run(
+                [sys.executable, str(FIRMWARE_TOOL), "validate-experimental-profile", str(invalid)],
+                cwd=REPOSITORY,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("network tuning settings are invalid", rejected.stderr)
+
     def test_profile_rejects_any_device_other_than_rm2100(self) -> None:
         result = self.run_profile_validation(
             "\n".join(
@@ -909,7 +959,90 @@ class SourcePreparationTests(unittest.TestCase):
                 '\t{ "http_proto", "0" },\n'
                 '\t{ "sshd_enable", "1" },\n'
                 '\t{ "sfe_enable", "0" },\n'
-                '\t{ "hw_nat_mode", "2" },\n',
+                '\t{ "hw_nat_mode", "2" },\n'
+                '\t{ "hw_nat_mode", "4" },\n'
+                '\t{ "watchdog_cpu", "1" },\n'
+                '#if (BOARD_RAM_SIZE > 128)\n'
+                '\t{ "nf_max_conn", "32768" },\n'
+                '#elif (BOARD_RAM_SIZE > 32)\n'
+                '\t{ "nf_max_conn", "16384" },\n'
+                '#else\n'
+                '\t{ "nf_max_conn", "8192" },\n'
+                '#endif\n',
+                encoding="utf-8",
+            )
+            init = source / "trunk" / "user" / "rc" / "init.c"
+            init.parent.mkdir(parents=True, exist_ok=True)
+            init.write_text(
+                '\tfput_int("/proc/sys/net/core/rmem_max", KERNEL_NET_CORE_RMEM);\n'
+                '\tfput_int("/proc/sys/net/core/wmem_max", KERNEL_NET_CORE_WMEM);\n',
+                encoding="utf-8",
+            )
+            config_arch = source / "trunk" / "vendors" / "Ralink" / "config.arch"
+            config_arch.parent.mkdir(parents=True, exist_ok=True)
+            config_arch.write_text(
+                "CPUFLAGS = -mips32r2 -march=mips32r2\n"
+                "ifeq ($(CONFIG_PRODUCT),MT7621)\n"
+                "CPUFLAGS += -mtune=1004kc\n"
+                "endif\n"
+                "UOPT = -Os\n"
+                "LOPT = -Os\n",
+                encoding="utf-8",
+            )
+            openssl_makefile = source / "trunk" / "libs" / "libssl" / "Makefile"
+            openssl_makefile.parent.mkdir(parents=True, exist_ok=True)
+            openssl_makefile.write_text(
+                "SRC_NAME=openssl-1.1.1k\n"
+                "SRC_URL=https://www.openssl.org/source/$(SRC_NAME).tar.gz\n"
+                "COPTS = $(CPUFLAGS) -O3 $(filter-out -O%, $(CFLAGS))\n\n"
+                "download_test:\n"
+                "\t( if [ ! -f $(SRC_NAME).tar.gz ]; then \\\n"
+                "\t\twget -t5 --timeout=20 --no-check-certificate -O $(SRC_NAME).tar.gz $(SRC_URL); \\\n"
+                "\tfi )\n\n"
+                "extract_test:\n"
+                "\t( if [ ! -d $(SRC_NAME) ]; then \\\n"
+                "\t\ttar -xf $(SRC_NAME).tar.gz; \\\n"
+                "\t\tpatch -d $(SRC_NAME) -p1 < $(SRC_NAME).patch; \\\n"
+                "\tfi )\n",
+                encoding="utf-8",
+            )
+            network = source / "trunk" / "user" / "rc" / "net.c"
+            network.write_text(
+                '\tif (sfe_loaded && !sfe_enable) {\n'
+                '\t\tmodule_smart_unload("fast_classifier", 1);\n'
+                '\t\tdoSystem("echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal");\n'
+                '\t\tdoSystem("echo 1 > /proc/sys/net/netfilter/nf_conntrack_tcp_no_window_check");\n'
+                '\t\tsfe_loaded = 0;\n'
+                '\t}\n'
+                '\tif (sfe_enable && !sfe_loaded) {\n'
+                '\t\tdoSystem("echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal");\n'
+                '\t\tdoSystem("echo 0 > /proc/sys/net/netfilter/nf_conntrack_tcp_no_window_check");\n'
+                '\t\tmodule_smart_load("fast_classifier", NULL);\n'
+                '\t\tsfe_loaded = 1;\n'
+                '\t}\n'
+                '\tif (sfe_loaded) {\n'
+                '\t\tif (sfe_enable == 1)\n'
+                '\t\t\tdoSystem("echo 0 > /sys/fast_classifier/skip_to_bridge_ingress");\n'
+                '\t\telse if (sfe_enable == 2)\n'
+                '\t\t\tdoSystem("echo 1 > /sys/fast_classifier/skip_to_bridge_ingress");\n'
+                '\t}\n',
+                encoding="utf-8",
+            )
+            self.write_userland_policy_sources(source)
+            board_config = (
+                source
+                / "trunk"
+                / "configs"
+                / "boards"
+                / "RM2100"
+                / "kernel-3.4.x-5.0.config"
+            )
+            board_config.write_text(
+                board_config.read_text(encoding="utf-8")
+                + "CONFIG_RA_HW_NAT=m\n"
+                + "CONFIG_HNAT_V2=y\n"
+                + "CONFIG_RA_HW_NAT_WIFI=y\n"
+                + "CONFIG_RA_HW_NAT_IPV6=y\n",
                 encoding="utf-8",
             )
             result = subprocess.run(
@@ -936,6 +1069,49 @@ class SourcePreparationTests(unittest.TestCase):
             rendered_defaults = defaults.read_text(encoding="utf-8")
             self.assertIn('{ "hw_nat_mode", "4" },', rendered_defaults)
             self.assertNotIn('{ "hw_nat_mode", "2" },', rendered_defaults)
+            self.assertIn('{ "nf_max_conn", "32768" },', rendered_defaults)
+            self.assertNotIn('{ "nf_max_conn", "16384" },', rendered_defaults)
+            rendered_init = init.read_text(encoding="utf-8")
+            self.assertIn(
+                'fput_int("/proc/sys/net/core/netdev_max_backlog", 2048);',
+                rendered_init,
+            )
+            self.assertIn(
+                'fput_int("/proc/sys/net/core/somaxconn", 1024);', rendered_init
+            )
+            rendered_arch = config_arch.read_text(encoding="utf-8")
+            self.assertIn("UOPT = -O2", rendered_arch)
+            self.assertIn("LOPT = -O2", rendered_arch)
+            self.assertIn("CPUFLAGS += -mtune=1004kc", rendered_arch)
+            self.assertNotIn("-flto", rendered_arch)
+            rendered_openssl = openssl_makefile.read_text(encoding="utf-8")
+            self.assertIn(
+                "COPTS = $(CPUFLAGS) -O2 $(filter-out -O%, $(CFLAGS))",
+                rendered_openssl,
+            )
+            self.assertNotIn("-O3", rendered_openssl)
+
+            report = directory / "aggressive-runtime-policy.json"
+            verification = subprocess.run(
+                [
+                    sys.executable,
+                    str(FIRMWARE_TOOL),
+                    "verify-source-policy",
+                    str(source),
+                    "--report",
+                    str(report),
+                    "--experimental-profile",
+                    str(REPOSITORY / "config" / "aggressive-performance.json"),
+                ],
+                cwd=REPOSITORY,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(verification.returncode, 0, verification.stderr)
+            policy = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(policy["experimental"]["network_tuning"]["conntrack_default"], 32768)
+            self.assertEqual(policy["experimental"]["compiler"]["userland_optimization"], "-O2")
 
     def test_prepare_source_restricts_the_management_plane(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
