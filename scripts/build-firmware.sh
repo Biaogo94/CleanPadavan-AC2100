@@ -56,10 +56,15 @@ done
 "$PYTHON" "$REPOSITORY/tools/firmware.py" validate-lock "$LOCK_FILE"
 "$PYTHON" "$REPOSITORY/tools/firmware.py" validate-profile "$PROFILE_FILE"
 EXPERIMENTAL_ARGS=()
+PROFILE_NAME="$(basename -- "$PROFILE_FILE")"
+if [[ "$PROFILE_NAME" == "rm2100-3.4-aggressive.config" \
+  && -z "$EXPERIMENTAL_PROFILE_FILE" ]]; then
+  die "rm2100-3.4-aggressive.config requires EXPERIMENTAL_PROFILE_FILE"
+fi
 if [[ -n "$EXPERIMENTAL_PROFILE_FILE" ]]; then
   "$PYTHON" "$REPOSITORY/tools/firmware.py" validate-experimental-profile \
     "$EXPERIMENTAL_PROFILE_FILE"
-  [[ "$(basename -- "$PROFILE_FILE")" == "rm2100-3.4-aggressive.config" ]] \
+  [[ "$PROFILE_NAME" == "rm2100-3.4-aggressive.config" ]] \
     || die "experimental builds must use rm2100-3.4-aggressive.config"
   [[ "$CPU_FREQUENCY" == "1000" ]] || die "aggressive builds must force CPU_FREQUENCY=1000"
   EXPERIMENTAL_ARGS=(--experimental-profile "$EXPERIMENTAL_PROFILE_FILE")

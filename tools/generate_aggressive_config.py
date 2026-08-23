@@ -39,7 +39,7 @@ PROFILE = {
     },
     "qualification": {
         "required": True,
-        "minimum_soak_hours": 24,
+        "minimum_soak_hours": 72,
         "must_measure": [
             "cpu_temperature",
             "wan_lan_throughput",

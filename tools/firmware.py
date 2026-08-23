@@ -1040,7 +1040,7 @@ def load_experimental_profile(path: Path) -> dict[str, object]:
         "required", "minimum_soak_hours", "must_measure"
     } or qualification.get("required") is not True:
         raise FirmwareError("aggressive profile must require hardware qualification")
-    if qualification.get("minimum_soak_hours") != 24 or qualification.get("must_measure") != [
+    if qualification.get("minimum_soak_hours") != 72 or qualification.get("must_measure") != [
         "cpu_temperature", "wan_lan_throughput", "pppoe_stability",
         "vpn_compatibility", "wifi_client_compatibility", "kernel_oops_and_panic_logs",
     ]:

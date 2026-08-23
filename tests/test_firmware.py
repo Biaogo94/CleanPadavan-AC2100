@@ -142,6 +142,25 @@ class ProfilePolicyTests(unittest.TestCase):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("features are incomplete", rejected.stderr)
 
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            invalid = Path(temporary_directory) / "short-soak-aggressive.json"
+            document = json.loads(
+                (REPOSITORY / "config" / "aggressive-performance.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            document["qualification"]["minimum_soak_hours"] = 24
+            invalid.write_text(json.dumps(document), encoding="utf-8")
+            rejected = subprocess.run(
+                [sys.executable, str(FIRMWARE_TOOL), "validate-experimental-profile", str(invalid)],
+                cwd=REPOSITORY,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("qualification requirements are incomplete", rejected.stderr)
+
     def test_profile_rejects_any_device_other_than_rm2100(self) -> None:
         result = self.run_profile_validation(
             "\n".join(

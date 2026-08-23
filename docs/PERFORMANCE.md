@@ -1,6 +1,6 @@
 # Performance and stability design
 
-This project optimizes the locked RM2100 Linux 3.4 source without treating unmeasured tuning as an improvement. Every source change must preserve the bootloader-clock path and compile in all four CPU modes. Automated releases do not claim hardware qualification.
+This project optimizes the locked RM2100 Linux 3.4 source without treating unmeasured tuning as an improvement. Every shared source change must preserve the bootloader-clock path and compile in all four CPU modes. The default profile supports all four modes; the explicit experimental profile is intentionally restricted to its declared 1000 MHz mode. Automated releases do not claim hardware qualification.
 
 ## CPU and scheduler
 
@@ -42,6 +42,6 @@ The default root filesystem includes the router startup process, HTTP/HTTPS mana
 
 The complete build is captured with `LC_ALL=C` and checked after linking. `build-warning-policy.json` proves that the enforced high-risk categories and unknown warning count are zero. The gate rejects implicit function declarations, format argument type mismatches, non-literal formats, string-literal address comparisons, truncation, accidental fallthrough, ambiguous indentation or parentheses, array bounds, overflow, uninitialized or unused assigned values, ignored I/O results, discarded qualifiers, macro redefinitions, use-after-free, null dereferences, incompatible pointer conversions and missing returns. The remaining diagnostics must match one of seven audited legacy categories, each with a fail-closed upper limit. Obsolete build-system diagnostics, intentional compile-time assertions and compiler inlining decisions therefore remain visible without allowing a new warning type or an unexplained count increase.
 
-## Optional hardware measurement
+## Hardware measurement
 
-Hardware testing is not part of the automated release gate. Operators who need deployment-specific evidence can compare the same immutable bundle with SFE disabled and SFE mode 1, recording bidirectional TCP throughput, UDP loss, CPU load, free memory, temperature, SFE exceptions and interface errors. The optional worksheet in `docs/HARDWARE-QUALIFICATION.md` retains the former measurement procedure without blocking builds or releases.
+Hardware testing is not part of the automated build gate. Default-profile operators can use the worksheet for deployment-specific evidence. The aggressive profile requires the complete 72-hour worksheet in `docs/HARDWARE-QUALIFICATION.md` before deployment, even though an explicitly acknowledged, clearly marked prerelease may be published before that device-specific evidence is collected. Measurements include bidirectional TCP throughput, UDP loss, CPU load, free memory, temperature, SFE exceptions and interface errors.

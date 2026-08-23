@@ -128,6 +128,10 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("EXPERIMENTAL_PROFILE_FILE", aggressive)
         self.assertIn('"${EXPERIMENTAL_ARGS[@]}"', build_script)
         self.assertIn(
+            "rm2100-3.4-aggressive.config requires EXPERIMENTAL_PROFILE_FILE",
+            build_script,
+        )
+        self.assertIn(
             "group: rm2100-3.4-${{ github.ref }}-${{ inputs.cpu_frequency || 'bootloader' }}",
             default,
         )
