@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPOSITORY="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 LOCK_FILE="${LOCK_FILE:-$REPOSITORY/config/build-lock.json}"
 PROFILE_FILE="${PROFILE_FILE:-$REPOSITORY/config/rm2100-3.4.config}"
+EXPERIMENTAL_PROFILE_FILE="${EXPERIMENTAL_PROFILE_FILE:-}"
 OUTPUT_DIR="${OUTPUT_DIR:-$REPOSITORY/dist}"
 CACHE_DIR="${CACHE_DIR:-$REPOSITORY/.cache/downloads}"
 PYTHON="${PYTHON:-python3}"
@@ -54,6 +55,20 @@ done
 
 "$PYTHON" "$REPOSITORY/tools/firmware.py" validate-lock "$LOCK_FILE"
 "$PYTHON" "$REPOSITORY/tools/firmware.py" validate-profile "$PROFILE_FILE"
+EXPERIMENTAL_ARGS=()
+PROFILE_NAME="$(basename -- "$PROFILE_FILE")"
+if [[ "$PROFILE_NAME" == "rm2100-3.4-aggressive.config" \
+  && -z "$EXPERIMENTAL_PROFILE_FILE" ]]; then
+  die "rm2100-3.4-aggressive.config requires EXPERIMENTAL_PROFILE_FILE"
+fi
+if [[ -n "$EXPERIMENTAL_PROFILE_FILE" ]]; then
+  "$PYTHON" "$REPOSITORY/tools/firmware.py" validate-experimental-profile \
+    "$EXPERIMENTAL_PROFILE_FILE"
+  [[ "$PROFILE_NAME" == "rm2100-3.4-aggressive.config" ]] \
+    || die "experimental builds must use rm2100-3.4-aggressive.config"
+  [[ "$CPU_FREQUENCY" == "1000" ]] || die "aggressive builds must force CPU_FREQUENCY=1000"
+  EXPERIMENTAL_ARGS=(--experimental-profile "$EXPERIMENTAL_PROFILE_FILE")
+fi
 "$PYTHON" "$REPOSITORY/tools/firmware.py" validate-credentials \
   "$ADMIN_PASSWORD_FILE" "$WIFI_PASSWORD_FILE"
 
@@ -119,13 +134,15 @@ cp -- "$OPENSSL_ARCHIVE" "$SOURCE_DIR/trunk/libs/libssl/openssl-1.1.1w.tar.gz"
 "$PYTHON" "$REPOSITORY/tools/firmware.py" prepare-source "$SOURCE_DIR" \
   --profile "$RENDERED_PROFILE" \
   --admin-password-file "$ADMIN_PASSWORD_FILE" \
-  --wifi-password-file "$WIFI_PASSWORD_FILE"
+  --wifi-password-file "$WIFI_PASSWORD_FILE" \
+  "${EXPERIMENTAL_ARGS[@]}"
 # Older 3.4 build tools still inspect source mtimes in a few generated files.
 # Normalize the complete patched checkout before invoking make so clean rebuilds
 # have the same timestamp inputs regardless of runner filesystem behavior.
 find "$SOURCE_DIR" -exec touch -h --date="@$SOURCE_DATE_EPOCH" {} +
 "$PYTHON" "$REPOSITORY/tools/firmware.py" verify-source-policy "$SOURCE_DIR" \
-  --report "$BUILD_ROOT/runtime-policy.json"
+  --report "$BUILD_ROOT/runtime-policy.json" \
+  "${EXPERIMENTAL_ARGS[@]}"
 
 (
   cd -- "$SOURCE_DIR/trunk"
@@ -152,6 +169,9 @@ cp -- "$RENDERED_PROFILE" "$OUTPUT_DIR/rm2100-3.4.config"
 cp -- "$SOURCE_DIR/trunk/linux-3.4.x/.config" "$OUTPUT_DIR/kernel-3.4.config"
 cp -- "$BUILD_ROOT/runtime-policy.json" "$OUTPUT_DIR/runtime-policy.json"
 cp -- "$WARNING_REPORT" "$OUTPUT_DIR/build-warning-policy.json"
+if [[ -n "$EXPERIMENTAL_PROFILE_FILE" ]]; then
+  cp -- "$EXPERIMENTAL_PROFILE_FILE" "$OUTPUT_DIR/experimental-profile.json"
+fi
 
 "$PYTHON" "$REPOSITORY/tools/firmware.py" verify-kernel-config \
   "$OUTPUT_DIR/kernel-3.4.config" \
@@ -164,13 +184,16 @@ BUILDER_COMMIT="$(git -C "$REPOSITORY" rev-parse HEAD)"
   --profile "$RENDERED_PROFILE" \
   --source-commit "$SOURCE_COMMIT" \
   --builder-commit "$BUILDER_COMMIT" \
-  --expected-timestamp "$SOURCE_DATE_EPOCH"
+  --expected-timestamp "$SOURCE_DATE_EPOCH" \
+  "${EXPERIMENTAL_ARGS[@]}"
 
 (
   cd -- "$OUTPUT_DIR"
-  sha256sum "$bundle_image_name" manifest.json build-lock.json \
+  files=("$bundle_image_name" manifest.json build-lock.json \
     rm2100-3.4.config kernel-3.4.config performance-profile.json \
-    runtime-policy.json build-warning-policy.json > SHA256SUMS
+    runtime-policy.json build-warning-policy.json)
+  [[ -f experimental-profile.json ]] && files+=(experimental-profile.json)
+  sha256sum "${files[@]}" > SHA256SUMS
 )
 
 printf 'Firmware Bundle: %s\n' "$OUTPUT_DIR"

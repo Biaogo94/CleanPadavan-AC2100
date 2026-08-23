@@ -1,52 +1,89 @@
 # Redmi AC2100 Padavan 3.4 Firmware Builder
 
-本仓库只构建 Redmi AC2100（`RM2100`）的 Padavan Linux 3.4 固件。构建输入、工具链和 HTTPS 依赖均由 Source Lock 固定并校验；构建完成后会验证 uImage 头、CRC、设备型号、内核版本和时间戳，再生成带 SHA-256 的 Firmware Bundle。
+本仓库只构建 Redmi AC2100（`RM2100`）的 Padavan Linux 3.4 固件，4.4 内核不在项目范围内。主干同时维护默认性能与激进性能两套配置，并提供两个相互独立的 GitHub Actions workflow。
 
-## 当前状态
+构建输入、工具链和 HTTPS 依赖由 Source Lock 固定并校验。每次构建都会验证源码策略、Firmware Profile、最终内核配置、uImage 头、CRC、设备型号、内核版本和时间戳，并通过第二次干净构建检查可复现性，最后生成带 `SHA256SUMS` 的 Firmware Bundle。
 
-构建和发布工程采用自动化软件门禁，不把机器测试作为发布前置条件。发布产物会经过源码策略、完整编译、镜像完整性和两次干净构建一致性校验；它不代表已经在每台路由器上完成温度、无线或长时间负载验证。Linux 3.4 和 OpenSSL 1.1.1 均已停止上游支持，部署者必须承担漏洞回补和管理面隔离责任。
+## 两种构建模式
 
-## 固件策略
+| 模式 | Actions workflow | CPU 频率 | 转发加速 | 发布类型 |
+| --- | --- | --- | --- | --- |
+| 默认性能 | **Build RM2100 Padavan 3.4 (Default)** | `bootloader`、`800`、`900`、`1000 MHz` | SFE mode 1；MT7615 路径保持上游 Hardware NAT 默认关闭 | 正式 Release |
+| 激进性能 | **Build RM2100 Padavan 3.4 (Aggressive - Experimental)** | 固定 `1000 MHz` | SFE mode 1；强制 MT7621 HW NAT v2 `hw_nat_mode=4`，启用 IPv4、UDP、Wi-Fi offload，IPv6 按上游能力检查 | Pre-release |
 
-启用：
+两个 workflow 文件分别为：
+
+- [`.github/workflows/build-default.yml`](.github/workflows/build-default.yml)
+- [`.github/workflows/build-aggressive.yml`](.github/workflows/build-aggressive.yml)
+
+默认性能配置面向通用部署，优先保留上游兼容性。激进性能配置可能提高 NAT 转发能力，但 1000 MHz 强制频率和 Hardware NAT 会扩大温度、PPPoE、VPN、IPv6、Wi-Fi 客户端及重连兼容性风险，不应因为编译成功就视为已经完成硬件认证。
+
+## GitHub Actions
+
+进入仓库的 **Actions** 页面，选择需要的 workflow 后点击 **Run workflow**。
+
+### 默认性能
+
+运行 **Build RM2100 Padavan 3.4 (Default)**：
+
+- `cpu_frequency` 可选择 `bootloader`、`800`、`900` 或 `1000`。
+- `release_version` 可留空，自动生成 `YYYYMMDD.<run_number>`；也可手动填写同格式版本号。
+- 手动构建成功后，经 GitHub `production` Environment 审批创建正式 Release。
+- push、PR 和定时任务只构建并上传 Artifact，不创建 Release。
+
+### 激进性能
+
+运行 **Build RM2100 Padavan 3.4 (Aggressive - Experimental)**：
+
+- CPU 固定为 `1000 MHz`，不提供虚假的其他频率组合。
+- 默认 `publish=false`，成功后仅生成 Artifact。
+- 如需发布，将 `publish` 设为 `true`，并在 `confirm_risk` 输入 `I_UNDERSTAND`。
+- 发布经过独立的 GitHub `experimental` Environment，并强制创建带实验警告的 Pre-release。
+- push 和 PR 会完整构建两次并校验 Artifact，但不会发布 Release。
+
+默认与激进 Release 使用不同标签命名空间，激进版本带 `aggressive` 标识，不会覆盖或伪装成默认性能版本。
+
+## 固件功能与约束
+
+两种模式共同启用：
 
 - RM2100 / MT7621，2.4 GHz `4.1` 与 5 GHz `5.0.5.1` 驱动
-- 2.4 GHz 与 5 GHz 默认使用澳大利亚 `AU` 地区码，由驱动按 AU 信道、功率限制和设备校准表工作
-- 构建时选择 MT7621 启动引导器时钟（默认），或由 3.4 内核强制 `800`、`900`、`1000 MHz`
-- SFE 软件快速转发默认使用模式 1；保留 Linux bridge 检查，不启用实验性 bridge ingress bypass
+- 2.4 GHz 与 5 GHz 默认使用澳大利亚 `AU` 地区码，实际信道和功率仍受驱动法规表、EEPROM 与 SingleSKU 校准限制
+- SFE 软件快速转发 mode 1，并保留 Linux bridge 检查
+- QDMA、checksum offload、scatter-gather TX、TSO/TSOv6、RPS 和 XPS
 - IPv6、IPSet、中文 WebUI
-- 仅 HTTPS 的管理界面
+- 仅 LAN HTTPS 管理界面
 
-关闭：
+默认关闭：
 
-- SSH、Telnet、FTP、Samba、VPN、代理、下载器、ttyd
+- SSH、Telnet、FTP、Samba、VPN、代理、下载器和 ttyd
 - vlmcsd、socat、srelay、tcpdump、iperf3 等非核心程序
-- USB 与 CPU sleep 实验选项
+- USB、CPU sleep、bridge ingress bypass
+- 未验证的全局 `-O3`、LTO、无限制 conntrack 和法规发射功率覆盖
 
-完整策略见 [`config/rm2100-3.4.config`](config/rm2100-3.4.config)。任何未批准的 `=y` 选项都会让验证失败。
-
-## GitHub Actions 构建
-
-在 Actions 中手动运行 **Build RM2100 Padavan 3.4**，在 `cpu_frequency` 选择 `bootloader`、`800`、`900` 或 `1000`。`release_version` 可留空，此时自动使用 `YYYYMMDD.<run_number>`；也可手动填写同格式版本号。源码校验、两次完整构建、镜像校验和可复现性比较全部成功后，workflow 会自动创建对应 GitHub Release，同时保留 `rm2100-3.4-cpu-<mode>-<run>-<attempt>` Artifact。PR、push 和定时任务只构建 Artifact，不发布 Release。公开仓库不需要配置密码 Secrets。
-
-锁定的 3.4 源码会为三个固定频率设置完整 PLL FBDIV 字段，构建器同时验证 Firmware Profile、源码策略和最终内核配置。`bootloader` 是默认且最保守的选择；`1000` 属于可选超频档，可能增加功耗、温度和个体设备不稳定风险。`AU` 地区码不会绕过驱动的法规限制或 EEPROM / SingleSKU 校准；仅应在符合当地法规的部署中使用。
-
-刷机并清空旧 NVRAM 后，AU 默认提供 2.4 GHz 信道 1-13，以及 5 GHz 信道 36-48、149-165；双频 `TxPower` 默认均为 100%，实际射频输出仍受驱动法规表与设备校准限制。SFE 默认值也只在新 NVRAM 上生效，升级保留旧 NVRAM 时应在 WebUI 核对。启动后可从系统日志中的 `CPU/OCP/SYS frequency` 行核对实际 CPU 时钟；不能只凭固件文件名判断运行频率。
-
-RM2100 的 MT7615 路径按上游策略保持硬件 NAT 关闭，使用 SFE mode 1 加速持续 TCP/UDP 转发。模块加载或卸载后会重新读取真实状态；加载失败会恢复 conntrack 参数并写入系统日志。源码决策、未采用的激进参数和测量方法见 [性能与稳定性设计](docs/PERFORMANCE.md)。
-
-正式发布仍通过 GitHub `production` Environment 的人工审批规则。公开默认密码是易用性取舍，管理界面保持仅 LAN HTTPS，SSH 与 Telnet 默认关闭；用户必须在首次登录后修改后台密码和两个无线网络的密码。
+完整默认配置见 [`config/rm2100-3.4.config`](config/rm2100-3.4.config)，激进配置见 [`config/rm2100-3.4-aggressive.config`](config/rm2100-3.4-aggressive.config) 与 [`config/aggressive-performance.json`](config/aggressive-performance.json)。任何未批准的选项或不一致的实验声明都会让构建失败。
 
 ## 本地 Linux 构建
 
-安装 `.github/workflows/build.yml` 中列出的 Ubuntu 22.04 依赖，然后：
+在 Ubuntu 22.04 安装 workflow 中列出的依赖。
+
+默认性能：
 
 ```bash
 CPU_FREQUENCY=bootloader \
 bash scripts/build-firmware.sh
 ```
 
-`CPU_FREQUENCY` 接受 `bootloader`、`800`、`900` 或 `1000`，省略时使用 `bootloader`。默认读取仓库内公开密码文件；高级用户仍可用 `ADMIN_PASSWORD_FILE` 和 `WIFI_PASSWORD_FILE` 指向自定义文件。默认输出在 `dist/`，包含固件、`manifest.json`、Source Lock、实际 Firmware Profile、最终 `kernel-3.4.config`、`performance-profile.json`、`runtime-policy.json`、`build-warning-policy.json` 和 `SHA256SUMS`。
+激进性能：
+
+```bash
+PROFILE_FILE=config/rm2100-3.4-aggressive.config \
+EXPERIMENTAL_PROFILE_FILE=config/aggressive-performance.json \
+CPU_FREQUENCY=1000 \
+bash scripts/build-firmware.sh
+```
+
+默认输出目录为 `dist/`，包含固件、`manifest.json`、Source Lock、实际 Firmware Profile、最终 `kernel-3.4.config`、`performance-profile.json`、`runtime-policy.json`、`build-warning-policy.json` 和 `SHA256SUMS`。激进构建还包含 `experimental-profile.json`，并将其纳入校验和清单。
 
 ## 首次部署
 
@@ -56,9 +93,12 @@ bash scripts/build-firmware.sh
 - 2.4 GHz 与 5 GHz 默认 Wi-Fi 密码：`1234567890`
 - 首次登录后立即修改后台密码和两个 Wi-Fi 密码
 - 禁止从 WAN 暴露管理界面
-- 使用 Breed 或等价恢复环境，并在升级前导出当前可回滚镜像
+- 升级前准备 Breed 或等价恢复环境，并保存可回滚固件
+- 刷写后清空旧 NVRAM，再核对地区码、SFE、CPU 实际频率及 Hardware NAT 状态
 
-自动化发布门槛与回滚要求见 [生产门槛](docs/PRODUCTION.md)。如部署者需要额外实机证据，可选用 [硬件验收记录](docs/HARDWARE-QUALIFICATION.md)，它不属于本项目的构建发布门槛。
+公开默认密码是为了方便首次使用，不是安全凭据。固件编译和软件校验通过，也不代表已经在所有硬件个体上完成温度、无线和长时间负载验证。默认模式的部署要求见 [生产门槛](docs/PRODUCTION.md)；激进模式部署前必须完成 [硬件验收记录](docs/HARDWARE-QUALIFICATION.md)。
+
+Linux 3.4 和 OpenSSL 1.1.1 均已停止上游支持，部署者需要承担漏洞回补、管理面隔离和恢复保障责任。性能策略、采用项与拒绝项见 [性能与稳定性设计](docs/PERFORMANCE.md)。
 
 ## 上游与许可
 

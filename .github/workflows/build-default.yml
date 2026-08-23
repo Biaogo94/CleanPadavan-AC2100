@@ -1,4 +1,4 @@
-name: Build RM2100 Padavan 3.4
+name: Build RM2100 Padavan 3.4 (Default)
 
 on:
   push:

@@ -81,10 +81,13 @@ BUNDLE_METADATA_FILES = (
     "runtime-policy.json",
     "build-warning-policy.json",
 )
+EXPERIMENTAL_PROFILE_FILE = "experimental-profile.json"
 BUNDLE_CHECKSUM_FILE = "SHA256SUMS"
 REPRODUCIBILITY_REPORT_FILE = "reproducibility-policy.json"
 SFE_DEFAULT_DISABLED = '\t{ "sfe_enable", "0" },'
 SFE_DEFAULT_ENABLED = '\t{ "sfe_enable", "1" },'
+HWNAT_DEFAULT_DISABLED = '\t{ "hw_nat_mode", "2" },'
+HWNAT_DEFAULT_AGGRESSIVE = '\t{ "hw_nat_mode", "4" },'
 SFE_RUNTIME_ORIGINAL = """\
 \tif (sfe_loaded && !sfe_enable) {
 \t\tmodule_smart_unload("fast_classifier", 1);
@@ -973,6 +976,83 @@ class FirmwareError(ValueError):
     """An input cannot produce a supported firmware bundle."""
 
 
+def load_experimental_profile(path: Path) -> dict[str, object]:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise FirmwareError(f"invalid experimental profile {path}: {error}") from error
+    if not isinstance(document, dict):
+        raise FirmwareError("experimental profile must be a JSON object")
+    required_top_level = {
+        "schema",
+        "mode",
+        "status",
+        "base_profile",
+        "cpu_frequency",
+        "features",
+        "qualification",
+        "disabled_until_qualified",
+    }
+    if set(document) != required_top_level:
+        raise FirmwareError("experimental profile has unexpected or missing top-level fields")
+    if document.get("schema") != 1 or document.get("mode") != "aggressive":
+        raise FirmwareError("experimental profile must use schema 1 and mode aggressive")
+    if document.get("status") != "experimental":
+        raise FirmwareError("experimental profile status must be experimental")
+    if document.get("base_profile") != "rm2100-3.4-aggressive.config":
+        raise FirmwareError("experimental profile must target the aggressive RM2100 profile")
+    if document.get("cpu_frequency") != "1000":
+        raise FirmwareError("aggressive profile must force the 1000 MHz CPU option")
+    features = document.get("features")
+    if not isinstance(features, dict):
+        raise FirmwareError("experimental profile features must be an object")
+    if set(features) != {"hardware_nat", "sfe", "ethernet", "scheduler", "cpu_distribution"}:
+        raise FirmwareError("experimental profile features are incomplete or contain unknown fields")
+    hardware_nat = features.get("hardware_nat")
+    if not isinstance(hardware_nat, dict) or set(hardware_nat) != {
+        "enabled", "runtime_mode", "kernel_module", "hnat_version", "wifi_offload", "ipv6_offload"
+    } or hardware_nat.get("enabled") is not True:
+        raise FirmwareError("aggressive profile must explicitly enable hardware NAT")
+    if hardware_nat.get("runtime_mode") != 4 or hardware_nat.get("kernel_module") != "CONFIG_RA_HW_NAT=m" \
+            or hardware_nat.get("hnat_version") != "HNAT_V2" \
+            or hardware_nat.get("wifi_offload") is not True \
+            or hardware_nat.get("ipv6_offload") is not True:
+        raise FirmwareError("aggressive hardware NAT runtime mode must be 4")
+    sfe = features["sfe"]
+    if not isinstance(sfe, dict) or sfe != {"enabled": True, "default_mode": 1}:
+        raise FirmwareError("aggressive SFE settings are invalid")
+    ethernet = features["ethernet"]
+    if not isinstance(ethernet, dict) or ethernet != {
+        "qdma": True, "checksum_offload": True, "scatter_gather_tx": True,
+        "tso": True, "tso_ipv6": True,
+    }:
+        raise FirmwareError("aggressive Ethernet settings are invalid")
+    scheduler = features["scheduler"]
+    if not isinstance(scheduler, dict) or scheduler != {"hz": 250, "preemption": "none"}:
+        raise FirmwareError("aggressive scheduler settings are invalid")
+    distribution = features["cpu_distribution"]
+    if not isinstance(distribution, dict) or distribution != {
+        "rps": True, "xps": True, "mt7621_irq_affinity": True,
+    }:
+        raise FirmwareError("aggressive CPU distribution settings are invalid")
+    qualification = document.get("qualification")
+    if not isinstance(qualification, dict) or set(qualification) != {
+        "required", "minimum_soak_hours", "must_measure"
+    } or qualification.get("required") is not True:
+        raise FirmwareError("aggressive profile must require hardware qualification")
+    if qualification.get("minimum_soak_hours") != 72 or qualification.get("must_measure") != [
+        "cpu_temperature", "wan_lan_throughput", "pppoe_stability",
+        "vpn_compatibility", "wifi_client_compatibility", "kernel_oops_and_panic_logs",
+    ]:
+        raise FirmwareError("aggressive qualification requirements are incomplete")
+    if document["disabled_until_qualified"] != [
+        "compiler O3/LTO overrides", "unbounded conntrack increases",
+        "regulatory transmit-power overrides", "bridge ingress bypass",
+    ]:
+        raise FirmwareError("aggressive disabled-until-qualified policy is invalid")
+    return document
+
+
 def parse_profile(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -1165,7 +1245,11 @@ def configure_kernel_cpu(source: Path, cpu_frequency: str) -> None:
 
 
 def prepare_source(
-    source: Path, profile: Path, admin_password_file: Path, wifi_password_file: Path
+    source: Path,
+    profile: Path,
+    admin_password_file: Path,
+    wifi_password_file: Path,
+    experimental_profile: Path | None = None,
 ) -> None:
     profile_values = validate_profile(profile)
     admin_password, wifi_password = validate_credentials(
@@ -1216,6 +1300,16 @@ def prepare_source(
             SFE_DEFAULT_ENABLED,
             "SFE runtime default",
         )
+        if experimental_profile is not None:
+            load_experimental_profile(experimental_profile)
+            if runtime_content.count(HWNAT_DEFAULT_DISABLED) != 1:
+                raise FirmwareError("expected one disabled HW NAT runtime default")
+            runtime_content = replace_exact_once(
+                runtime_content,
+                HWNAT_DEFAULT_DISABLED,
+                HWNAT_DEFAULT_AGGRESSIVE,
+                "aggressive HW NAT runtime default",
+            )
         runtime_defaults.write_text(runtime_content, encoding="utf-8", newline="\n")
 
     runtime_network = source / "trunk" / "user" / "rc" / "net.c"
@@ -1311,7 +1405,9 @@ def prepare_source(
         openssl_makefile.write_text(openssl_content, encoding="utf-8", newline="\n")
 
 
-def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
+def verify_source_policy(
+    source: Path, report: Path, experimental_profile: Path | None = None
+) -> dict[str, object]:
     runtime_defaults = source / "trunk" / "user" / "shared" / "defaults.c"
     runtime_network = source / "trunk" / "user" / "rc" / "net.c"
     if not runtime_defaults.is_file() or not runtime_network.is_file():
@@ -1326,6 +1422,12 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
         "SFE module state handling": network_content.count(SFE_RUNTIME_HARDENED) == 1
         and SFE_RUNTIME_ORIGINAL not in network_content,
     }
+    if experimental_profile is not None:
+        load_experimental_profile(experimental_profile)
+        checks["aggressive HW NAT runtime default"] = (
+            defaults_content.count(HWNAT_DEFAULT_AGGRESSIVE) == 2
+            and HWNAT_DEFAULT_DISABLED not in defaults_content
+        )
     source_cache: dict[str, str] = {}
     for relative_path, old, new, label in SOURCE_PATCHES:
         source_file = source / relative_path
@@ -1360,6 +1462,15 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
         expected_value = "y" if cpu_selection == frequency else "n"
         checks[f"{frequency} MHz kernel PLL selection"] = (
             kernel_values.get(option) == expected_value
+        )
+    if experimental_profile is not None:
+        checks.update(
+            {
+                "aggressive HW NAT module": kernel_values.get("CONFIG_RA_HW_NAT") == "m",
+                "aggressive HW NAT v2": kernel_values.get("CONFIG_HNAT_V2") == "y",
+                "aggressive HW NAT Wi-Fi offload": kernel_values.get("CONFIG_RA_HW_NAT_WIFI") == "y",
+                "aggressive HW NAT IPv6 offload": kernel_values.get("CONFIG_RA_HW_NAT_IPV6") == "y",
+            }
         )
 
     failed = [name for name, passed in checks.items() if not passed]
@@ -1426,6 +1537,12 @@ def verify_source_policy(source: Path, report: Path) -> dict[str, object]:
         },
         "watchdog": {"default_enabled": True},
     }
+    if experimental_profile is not None:
+        document["experimental"] = {
+            "mode": "aggressive",
+            "hardware_nat_runtime_mode": 4,
+            "hardware_qualification_required": True,
+        }
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(
         json.dumps(document, indent=2, sort_keys=True) + "\n",
@@ -1576,6 +1693,8 @@ def firmware_bundle_files(bundle: Path, include_reproducibility: bool) -> list[s
             f"expected one RM2100 3.4 image in {bundle}, found {len(images)}"
         )
     files = [images[0], *BUNDLE_METADATA_FILES]
+    if (bundle / EXPERIMENTAL_PROFILE_FILE).is_file():
+        files.append(EXPERIMENTAL_PROFILE_FILE)
     if include_reproducibility:
         files.append(REPRODUCIBILITY_REPORT_FILE)
     return files
@@ -1679,8 +1798,10 @@ def verify_image(
     source_commit: str,
     builder_commit: str,
     expected_timestamp: int,
+    experimental_profile: Path | None = None,
 ) -> dict[str, object]:
     profile_values = validate_profile(profile)
+    experiment = load_experimental_profile(experimental_profile) if experimental_profile else None
     if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
         raise FirmwareError("source commit must be a full lowercase Git SHA")
     if not re.fullmatch(r"[0-9a-f]{40}", builder_commit):
@@ -1759,6 +1880,14 @@ def verify_image(
             "kernel_size": kernel_size,
         },
     }
+    if experiment is not None:
+        document["experimental"] = {
+            "mode": experiment["mode"],
+            "status": experiment["status"],
+            "profile_sha256": sha256_file(experimental_profile),
+            "hardware_nat_runtime_mode": 4,
+            "hardware_qualification_required": True,
+        }
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(
         json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
@@ -1772,6 +1901,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate = subparsers.add_parser("validate-profile")
     validate.add_argument("profile", type=Path)
+
+    validate_experimental = subparsers.add_parser("validate-experimental-profile")
+    validate_experimental.add_argument("profile", type=Path)
 
     configure = subparsers.add_parser("configure-profile")
     configure.add_argument("source", type=Path)
@@ -1787,10 +1919,12 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--profile", required=True, type=Path)
     prepare.add_argument("--admin-password-file", required=True, type=Path)
     prepare.add_argument("--wifi-password-file", required=True, type=Path)
+    prepare.add_argument("--experimental-profile", type=Path)
 
     verify_source = subparsers.add_parser("verify-source-policy")
     verify_source.add_argument("source", type=Path)
     verify_source.add_argument("--report", required=True, type=Path)
+    verify_source.add_argument("--experimental-profile", type=Path)
 
     verify_warnings = subparsers.add_parser("verify-build-log")
     verify_warnings.add_argument("build_log", type=Path)
@@ -1803,6 +1937,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--source-commit", required=True)
     verify.add_argument("--builder-commit", required=True)
     verify.add_argument("--expected-timestamp", required=True, type=int)
+    verify.add_argument("--experimental-profile", type=Path)
 
     verify_kernel = subparsers.add_parser("verify-kernel-config")
     verify_kernel.add_argument("kernel_config", type=Path)
@@ -1829,6 +1964,10 @@ def main() -> int:
             validate_profile(arguments.profile)
             print(f"valid profile: {arguments.profile}")
             return 0
+        if arguments.command == "validate-experimental-profile":
+            load_experimental_profile(arguments.profile)
+            print(f"valid experimental profile: {arguments.profile}")
+            return 0
         if arguments.command == "validate-credentials":
             validate_credentials(arguments.admin_password_file, arguments.wifi_password_file)
             print("valid provisioning credentials")
@@ -1843,6 +1982,7 @@ def main() -> int:
                 arguments.profile,
                 arguments.admin_password_file,
                 arguments.wifi_password_file,
+                arguments.experimental_profile,
             )
             print(f"prepared source: {arguments.source}")
             return 0
@@ -1854,11 +1994,14 @@ def main() -> int:
                 arguments.source_commit,
                 arguments.builder_commit,
                 arguments.expected_timestamp,
+                arguments.experimental_profile,
             )
             print(f"verified firmware: {arguments.image}")
             return 0
         if arguments.command == "verify-source-policy":
-            verify_source_policy(arguments.source, arguments.report)
+            verify_source_policy(
+                arguments.source, arguments.report, arguments.experimental_profile
+            )
             print(f"verified source policy: {arguments.source}")
             return 0
         if arguments.command == "verify-build-log":
