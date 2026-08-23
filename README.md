@@ -39,9 +39,11 @@
 - 目标端用户态和库从上游 `-Os` 调整为 `-O3`，OpenSSL 增加 `-fomit-frame-pointer`，保留 `mips32r2` / `1004kc` 定向编译。
 - 默认连接跟踪数为 `32768`，`netdev_max_backlog=2048`，`somaxconn=1024`。
 - 不启用 LTO、`-ffast-math`、循环强展开或 Linux 3.4 不支持的 TCP Fast Open sysctl。
+- IPv6 Hardware NAT 保留内核能力但默认关闭，激进默认仅开启 IPv4、Wi-Fi 与 UDP offload。
 - 默认 `publish=false`，成功后仅生成 Artifact。
 - 如需发布，将 `publish` 设为 `true`，并在 `confirm_risk` 输入 `I_UNDERSTAND`。
 - 发布经过独立的 GitHub `experimental` Environment，并强制创建带实验警告的 Pre-release。
+- 启动日志和 WebUI 固件版本会显示 `-default` 或 `-aggressive-o3`，用于区分默认性能与激进性能；该标识不改变刷机兼容的基础版本字段。
 - push 和 PR 会完整构建两次并校验 Artifact，但不会发布 Release。
 
 默认与激进 Release 使用不同标签命名空间，激进版本带 `aggressive` 标识，不会覆盖或伪装成默认性能版本。

@@ -20,7 +20,7 @@ PROFILE = {
             "kernel_module": "CONFIG_RA_HW_NAT=m",
             "hnat_version": "HNAT_V2",
             "wifi_offload": True,
-            "ipv6_offload": True,
+            "ipv6_offload": False,
         },
         "sfe": {"enabled": True, "default_mode": 1},
         "ethernet": {

@@ -11,7 +11,7 @@
       "kernel_module": "CONFIG_RA_HW_NAT=m",
       "hnat_version": "HNAT_V2",
       "wifi_offload": true,
-      "ipv6_offload": true
+      "ipv6_offload": false
     },
     "sfe": {
       "enabled": true,

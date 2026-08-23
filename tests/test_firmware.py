@@ -104,6 +104,13 @@ class ProfilePolicyTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+        profile = json.loads(
+            (REPOSITORY / "config" / "aggressive-performance.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertFalse(profile["features"]["hardware_nat"]["ipv6_offload"])
+
         with tempfile.TemporaryDirectory() as temporary_directory:
             invalid = Path(temporary_directory) / "aggressive.json"
             document = json.loads(
@@ -444,6 +451,28 @@ class ProvisioningPolicyTests(unittest.TestCase):
 
 
 class SourcePreparationTests(unittest.TestCase):
+    @staticmethod
+    def firmware_identity_source() -> str:
+        return (
+            "\tchar productid[16];\n"
+            "\tchar fwver[16], fwver_sub[32];\n\n"
+            "#if defined(FWREVSTR)\n"
+            "\tif (strlen(FWREVSTR) > 0 && strlen(FWREVSTR) <= 8) {\n"
+            "\t\tstrcat(fwver_sub, \"_\");\n"
+            "\t\tstrcat(fwver_sub, FWREVSTR);\n"
+            "\t}\n"
+            "#endif\n"
+            "\tnvram_set_temp(\"productid\", trim_r(productid));\n"
+            "\tnvram_set_temp(\"firmver\", trim_r(fwver));\n"
+            "\tnvram_set_temp(\"firmver_sub\", trim_r(fwver_sub));\n"
+        )
+
+    def write_firmware_identity_source(self, source: Path) -> Path:
+        path = source / "trunk" / "user" / "rc" / "common_ex.c"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(self.firmware_identity_source(), encoding="utf-8")
+        return path
+
     def create_base_source(self, directory: Path) -> tuple[Path, Path, Path]:
         source = directory / "source"
         template = source / "trunk" / "configs" / "templates" / "RM2100.config"
@@ -459,6 +488,7 @@ class SourcePreparationTests(unittest.TestCase):
             '#define DEF_ROOT_PASSWORD "admin"\n',
             encoding="utf-8",
         )
+        self.write_firmware_identity_source(source)
         kernel_source = (
             source / "trunk" / "linux-3.4.x" / "arch" / "mips" / "rt2880"
         )
@@ -508,6 +538,10 @@ class SourcePreparationTests(unittest.TestCase):
                 "trunk/user/rc/rc.c",
                 '#include "rc.h"\n#include "gpio_pins.h"\n'
                 "\tset_cpu_affinity(is_ap_mode);\n",
+            ),
+            "firmware_identity": (
+                "trunk/user/rc/common_ex.c",
+                self.firmware_identity_source(),
             ),
             "smp": (
                 "trunk/user/rc/smp.c",
@@ -891,6 +925,7 @@ class SourcePreparationTests(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
+            self.write_firmware_identity_source(source)
             admin_value = "Admin-Test-Password-9381"
             wifi_value = "WiFi-Test-Password-2847"
             admin_password = directory / "admin-password"
@@ -929,6 +964,17 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertIn('#define DEF_WLAN_5G_CC\t"AU"', rendered_defaults)
             self.assertNotIn(admin_value, result.stdout + result.stderr)
             self.assertNotIn(wifi_value, result.stdout + result.stderr)
+
+    def test_prepare_source_requires_the_firmware_identity_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            directory = Path(temporary_directory)
+            source, admin_password, wifi_password = self.create_base_source(directory)
+            (source / "trunk" / "user" / "rc" / "common_ex.c").unlink()
+
+            result = self.run_preparation(source, admin_password, wifi_password)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("missing firmware identity path", result.stderr)
 
     def test_prepare_source_selects_exact_kernel_pll_for_each_cpu_mode(self) -> None:
         for frequency in ("bootloader", "800", "900", "1000"):
@@ -1121,6 +1167,12 @@ class SourcePreparationTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            firmware_identity = (
+                source / "trunk" / "user" / "rc" / "common_ex.c"
+            ).read_text(encoding="utf-8")
+            self.assertIn("fwver_sub[64]", firmware_identity)
+            self.assertIn('"-aggressive-o3"', firmware_identity)
+            self.assertNotIn('"-default"', firmware_identity)
             rendered_defaults = defaults.read_text(encoding="utf-8")
             self.assertIn('{ "hw_nat_mode", "4" },', rendered_defaults)
             self.assertNotIn('{ "hw_nat_mode", "2" },', rendered_defaults)
@@ -1166,6 +1218,10 @@ class SourcePreparationTests(unittest.TestCase):
             )
             self.assertEqual(verification.returncode, 0, verification.stderr)
             policy = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(
+                policy["firmware_identity"],
+                {"name": "aggressive-o3", "version_suffix": "-aggressive-o3"},
+            )
             self.assertEqual(policy["experimental"]["network_tuning"]["conntrack_default"], 32768)
             self.assertEqual(policy["experimental"]["compiler"]["userland_optimization"], "-O3")
 
@@ -1194,6 +1250,7 @@ class SourcePreparationTests(unittest.TestCase):
                 '\t{ "sfe_enable", "0" },\n',
                 encoding="utf-8",
             )
+            self.write_firmware_identity_source(source)
             admin_password = directory / "admin-password"
             wifi_password = directory / "wifi-password"
             admin_password.write_text("Admin-Test-Password-9381", encoding="utf-8")
@@ -1240,7 +1297,7 @@ class SourcePreparationTests(unittest.TestCase):
                 encoding="utf-8",
             )
             network = source / "trunk" / "user" / "rc" / "net.c"
-            network.parent.mkdir(parents=True)
+            network.parent.mkdir(parents=True, exist_ok=True)
             network.write_text(
                 '#if defined (USE_SFE)\n'
                 '\tint sfe_enable = nvram_get_int("sfe_enable");\n'
@@ -1375,6 +1432,10 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertTrue(
                 document["image_build_hardening"]["squashfs_fragments_disabled"]
             )
+            self.assertEqual(
+                document["firmware_identity"],
+                {"name": "default", "version_suffix": "-default"},
+            )
             self.assertTrue(
                 document["image_build_hardening"][
                     "lzma_string_search_checks_all_characters"
@@ -1461,6 +1522,12 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertIn("datalen > 0 && data == NULL", pppd_fsm)
             self.assertIn("datalen = 0;", pppd_fsm)
             self.assertIn("datalen > 0 && data != NULL", pppd_fsm)
+            firmware_identity = paths["firmware_identity"].read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("fwver_sub[64]", firmware_identity)
+            self.assertIn('"-default"', firmware_identity)
+            self.assertNotIn('"-aggressive-o3"', firmware_identity)
             xl2tpd = paths["xl2tpd"].read_text(encoding="utf-8")
             self.assertIn("if (!kernel_support) {", xl2tpd)
             self.assertIn("                 }\n#endif", xl2tpd)

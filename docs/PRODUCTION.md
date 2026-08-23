@@ -6,6 +6,7 @@ A successful GitHub Actions run creates a software-verified Firmware Bundle. Mac
 | --- | --- | --- |
 | Source Lock | `build-lock.json` and download logs | Exact Git commit and both SHA-256 checks pass |
 | Firmware Profile | `rm2100-3.4.config` | RM2100, Linux 3.4, AU dual-band policy, selected CPU mode, approved options only |
+| Runtime identity | startup log, WebUI firmware version and `runtime-policy.json` | Default bundles end in `-default`; aggressive O3 bundles end in `-aggressive-o3` |
 | CPU baseline | `kernel-3.4.config` and `performance-profile.json` | Requested PLL mode, 4-way SMP, HZ=250, SFE, RPS and XPS all match |
 | Runtime fast path | `runtime-policy.json` and prepared-source verification | SFE mode 1 is the clean-NVRAM default; bridge bypass is off; module state and failure fallback are verified |
 | Aggressive tuning | `experimental-profile.json` and `runtime-policy.json` | HW NAT mode 4, bounded 32K conntrack, queue limits, target `-O3` and absence of LTO/unsafe-math all match |

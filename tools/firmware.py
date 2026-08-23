@@ -84,6 +84,14 @@ BUNDLE_METADATA_FILES = (
 EXPERIMENTAL_PROFILE_FILE = "experimental-profile.json"
 BUNDLE_CHECKSUM_FILE = "SHA256SUMS"
 REPRODUCIBILITY_REPORT_FILE = "reproducibility-policy.json"
+FIRMWARE_VERSION_BUFFER_ORIGINAL = "\tchar fwver[16], fwver_sub[32];"
+FIRMWARE_VERSION_BUFFER_IDENTIFIED = "\tchar fwver[16], fwver_sub[64];"
+FIRMWARE_VERSION_SUFFIX_ANCHOR = (
+    "#endif\n"
+    '\tnvram_set_temp("productid", trim_r(productid));'
+)
+DEFAULT_FIRMWARE_IDENTITY = "default"
+AGGRESSIVE_FIRMWARE_IDENTITY = "aggressive-o3"
 SFE_DEFAULT_DISABLED = '\t{ "sfe_enable", "0" },'
 SFE_DEFAULT_ENABLED = '\t{ "sfe_enable", "1" },'
 HWNAT_DEFAULT_DISABLED = '\t{ "hw_nat_mode", "2" },'
@@ -1167,7 +1175,7 @@ def load_experimental_profile(path: Path) -> dict[str, object]:
     if hardware_nat.get("runtime_mode") != 4 or hardware_nat.get("kernel_module") != "CONFIG_RA_HW_NAT=m" \
             or hardware_nat.get("hnat_version") != "HNAT_V2" \
             or hardware_nat.get("wifi_offload") is not True \
-            or hardware_nat.get("ipv6_offload") is not True:
+            or hardware_nat.get("ipv6_offload") is not False:
         raise FirmwareError("aggressive hardware NAT runtime mode must be 4")
     sfe = features["sfe"]
     if not isinstance(sfe, dict) or sfe != {"enabled": True, "default_mode": 1}:
@@ -1530,6 +1538,32 @@ def prepare_source(
         source_content = replace_exact_once(source_content, old, new, label)
         source_file.write_text(source_content, encoding="utf-8", newline="\n")
 
+    runtime_identity = source / "trunk" / "user" / "rc" / "common_ex.c"
+    if not runtime_identity.is_file():
+        raise FirmwareError(f"source tree is missing firmware identity path: {runtime_identity}")
+    identity = (
+        AGGRESSIVE_FIRMWARE_IDENTITY
+        if experimental_profile is not None
+        else DEFAULT_FIRMWARE_IDENTITY
+    )
+    identity_content = runtime_identity.read_text(encoding="utf-8")
+    identity_content = replace_exact_once(
+        identity_content,
+        FIRMWARE_VERSION_BUFFER_ORIGINAL,
+        FIRMWARE_VERSION_BUFFER_IDENTIFIED,
+        "firmware identity buffer",
+    )
+    identity_content = replace_exact_once(
+        identity_content,
+        FIRMWARE_VERSION_SUFFIX_ANCHOR,
+        "#endif\n"
+        f'\tstrncat(fwver_sub, "-{identity}", '
+        "sizeof(fwver_sub) - strlen(fwver_sub) - 1);\n"
+        '\tnvram_set_temp("productid", trim_r(productid));',
+        f"{identity} firmware identity",
+    )
+    runtime_identity.write_text(identity_content, encoding="utf-8", newline="\n")
+
     configure_kernel_cpu(source, cpu_frequency_from_profile(profile_values))
 
     xz_makefile = source / "trunk" / "tools" / "mksquashfs_xz" / "Makefile"
@@ -1621,6 +1655,14 @@ def verify_source_policy(
 
     defaults_content = runtime_defaults.read_text(encoding="utf-8")
     network_content = runtime_network.read_text(encoding="utf-8")
+    runtime_identity = source / "trunk" / "user" / "rc" / "common_ex.c"
+    if not runtime_identity.is_file():
+        raise FirmwareError(f"prepared source is missing firmware identity path: {runtime_identity}")
+    identity_name = (
+        AGGRESSIVE_FIRMWARE_IDENTITY
+        if experimental_profile is not None
+        else DEFAULT_FIRMWARE_IDENTITY
+    )
     checks = {
         "SFE default mode": defaults_content.count(SFE_DEFAULT_ENABLED) == 1
         and SFE_DEFAULT_DISABLED not in defaults_content,
@@ -1628,6 +1670,13 @@ def verify_source_policy(
         "SFE module state handling": network_content.count(SFE_RUNTIME_HARDENED) == 1
         and SFE_RUNTIME_ORIGINAL not in network_content,
     }
+    identity_content = runtime_identity.read_text(encoding="utf-8")
+    checks["firmware identity buffer"] = (
+        identity_content.count(FIRMWARE_VERSION_BUFFER_IDENTIFIED) == 1
+    )
+    checks["firmware identity suffix"] = (
+        identity_content.count(f'"-{identity_name}"') == 1
+    )
     if experimental_profile is not None:
         load_experimental_profile(experimental_profile)
         runtime_init = source / "trunk" / "user" / "rc" / "init.c"
@@ -1730,6 +1779,10 @@ def verify_source_policy(
 
     document: dict[str, object] = {
         "schema": 1,
+        "firmware_identity": {
+            "name": identity_name,
+            "version_suffix": f"-{identity_name}",
+        },
         "sfe": {
             "default_mode": 1,
             "bridge_ingress_bypass": False,

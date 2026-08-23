@@ -192,6 +192,8 @@ class WorkflowPolicyTests(unittest.TestCase):
         self.assertIn("hw_nat_mode=4", readme)
         self.assertIn("admin", readme)
         self.assertIn("1234567890", readme)
+        self.assertIn("-default", readme)
+        self.assertIn("-aggressive-o3", readme)
 
 
 if __name__ == "__main__":
