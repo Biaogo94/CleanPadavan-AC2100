@@ -603,7 +603,11 @@ class SourcePreparationTests(unittest.TestCase):
                 "trunk/user/miniupnpd/miniupnpd-2.x/upnpevents.c",
                 "\t\t\t\tif(obj->state != EConnecting)\n"
                 "\t\t\t\t\tbreak;\n"
-                "\t\t\tcase EConnecting:\n",
+                "\t\t\tcase EConnecting:\n"
+                "\tobj->tosend = snprintf(obj->buffer, obj->buffersize, notifymsg,\n"
+                "\t                       obj->path, obj->addrstr, obj->portstr, l+2,\n"
+                "\t                       obj->sub->uuid, obj->sub->seq,\n"
+                "\t                       l, xml);\n",
             ),
             "xl2tpd": (
                 "trunk/user/xl2tpd/xl2tpd.c",
@@ -1266,7 +1270,7 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertTrue(
                 document["cpu_frequency_policy"]["full_fbdiv_register_programming"]
             )
-            self.assertEqual(document["userland_hardening"]["exact_source_patches"], 20)
+            self.assertEqual(document["userland_hardening"]["exact_source_patches"], 21)
             self.assertTrue(
                 document["userland_hardening"]["ascii_hex_length_scope_verified"]
             )
@@ -1356,7 +1360,9 @@ class SourcePreparationTests(unittest.TestCase):
                 "usage(); \n\t  break;",
                 paths["ifrename"].read_text(encoding="utf-8"),
             )
-            self.assertIn("/* fall through */", paths["upnp"].read_text(encoding="utf-8"))
+            upnp = paths["upnp"].read_text(encoding="utf-8")
+            self.assertIn("/* fall through */", upnp)
+            self.assertIn('l, xml ? xml : "");', upnp)
             xl2tpd = paths["xl2tpd"].read_text(encoding="utf-8")
             self.assertIn("if (!kernel_support) {", xl2tpd)
             self.assertIn("                 }\n#endif", xl2tpd)

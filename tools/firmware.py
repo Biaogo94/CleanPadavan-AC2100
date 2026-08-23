@@ -271,6 +271,18 @@ USERLAND_SOURCE_PATCHES = (
         "miniupnpd connection-state fallthrough",
     ),
     (
+        "trunk/user/miniupnpd/miniupnpd-2.x/upnpevents.c",
+        "\tobj->tosend = snprintf(obj->buffer, obj->buffersize, notifymsg,\n"
+        "\t                       obj->path, obj->addrstr, obj->portstr, l+2,\n"
+        "\t                       obj->sub->uuid, obj->sub->seq,\n"
+        "\t                       l, xml);",
+        "\tobj->tosend = snprintf(obj->buffer, obj->buffersize, notifymsg,\n"
+        "\t                       obj->path, obj->addrstr, obj->portstr, l+2,\n"
+        "\t                       obj->sub->uuid, obj->sub->seq,\n"
+        "\t                       l, xml ? xml : \"\");",
+        "miniupnpd event payload null fallback",
+    ),
+    (
         "trunk/user/xl2tpd/xl2tpd.c",
         "#ifdef USE_KERNEL\n"
         "                 if (!kernel_support)\n"
