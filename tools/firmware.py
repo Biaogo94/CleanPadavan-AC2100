@@ -272,15 +272,15 @@ USERLAND_SOURCE_PATCHES = (
     ),
     (
         "trunk/user/miniupnpd/miniupnpd-2.x/upnpevents.c",
-        "\tobj->tosend = snprintf(obj->buffer, obj->buffersize, notifymsg,\n"
-        "\t                       obj->path, obj->addrstr, obj->portstr, l+2,\n"
-        "\t                       obj->sub->uuid, obj->sub->seq,\n"
-        "\t                       l, xml);",
-        "\tobj->tosend = snprintf(obj->buffer, obj->buffersize, notifymsg,\n"
-        "\t                       obj->path, obj->addrstr, obj->portstr, l+2,\n"
-        "\t                       obj->sub->uuid, obj->sub->seq,\n"
-        "\t                       l, xml ? xml : \"\");",
-        "miniupnpd event payload null fallback",
+        "\tdefault:\n"
+        "\t\txml = NULL;\n"
+        "\t\tl = 0;\n"
+        "\t}",
+        "\tdefault:\n"
+        "\t\tobj->state = EError;\n"
+        "\t\treturn;\n"
+        "\t}",
+        "miniupnpd unknown service rejection",
     ),
     (
         "trunk/user/xl2tpd/xl2tpd.c",

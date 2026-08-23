@@ -604,6 +604,10 @@ class SourcePreparationTests(unittest.TestCase):
                 "\t\t\t\tif(obj->state != EConnecting)\n"
                 "\t\t\t\t\tbreak;\n"
                 "\t\t\tcase EConnecting:\n"
+                "\tdefault:\n"
+                "\t\txml = NULL;\n"
+                "\t\tl = 0;\n"
+                "\t}\n"
                 "\tobj->tosend = snprintf(obj->buffer, obj->buffersize, notifymsg,\n"
                 "\t                       obj->path, obj->addrstr, obj->portstr, l+2,\n"
                 "\t                       obj->sub->uuid, obj->sub->seq,\n"
@@ -1362,7 +1366,10 @@ class SourcePreparationTests(unittest.TestCase):
             )
             upnp = paths["upnp"].read_text(encoding="utf-8")
             self.assertIn("/* fall through */", upnp)
-            self.assertIn('l, xml ? xml : "");', upnp)
+            self.assertIn(
+                "\tdefault:\n\t\tobj->state = EError;\n\t\treturn;\n\t}", upnp
+            )
+            self.assertNotIn("\t\txml = NULL;\n\t\tl = 0;", upnp)
             xl2tpd = paths["xl2tpd"].read_text(encoding="utf-8")
             self.assertIn("if (!kernel_support) {", xl2tpd)
             self.assertIn("                 }\n#endif", xl2tpd)
