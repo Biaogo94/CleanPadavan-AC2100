@@ -283,6 +283,98 @@ USERLAND_SOURCE_PATCHES = (
         "miniupnpd unknown service rejection",
     ),
     (
+        "trunk/user/iptables/iptables-1.4.16.3/libiptc/libiptc.c",
+        "\tunsigned int idx, idx2;",
+        "\tunsigned int idx = 0, idx2 = 0;",
+        "iptables chain index initialization",
+    ),
+    (
+        "trunk/user/iptables/iptables-1.4.16.3/libxtables/xtables.c",
+        "\tret = xtables_strtoul(s, end, &v, min, max);\n"
+        "\tif (value != NULL)\n"
+        "\t\t*value = v;",
+        "\tret = xtables_strtoul(s, end, &v, min, max);\n"
+        "\tif (ret && value != NULL)\n"
+        "\t\t*value = (unsigned int)v;",
+        "iptables parsed value assignment",
+    ),
+    (
+        "trunk/user/iproute2/iproute2-3.4.0/tc/m_ipt.c",
+        "\tresult = string_to_number_ll(s, min, max, &number);\n"
+        "\t*ret = (unsigned long)number;",
+        "\tresult = string_to_number_ll(s, min, max, &number);\n"
+        "\tif (result == 0)\n"
+        "\t\t*ret = (unsigned long)number;",
+        "iproute2 long parsed value assignment",
+    ),
+    (
+        "trunk/user/iproute2/iproute2-3.4.0/tc/m_ipt.c",
+        "\tresult = string_to_number_l(s, min, max, &number);\n"
+        "\t*ret = (unsigned int)number;",
+        "\tresult = string_to_number_l(s, min, max, &number);\n"
+        "\tif (result == 0)\n"
+        "\t\t*ret = (unsigned int)number;",
+        "iproute2 integer parsed value assignment",
+    ),
+    (
+        "trunk/user/iproute2/iproute2-3.4.0/ip/iptuntap.c",
+        "\tchar fname[IFNAMSIZ+25], buf[80], *endp;\n"
+        "\tssize_t len;\n"
+        "\tint fd;\n"
+        "\tlong result;\n\n"
+        "\tsprintf(fname, \"/sys/class/net/%s/%s\", dev, prop);",
+        "\tchar fname[IFNAMSIZ+25], buf[80], *endp;\n"
+        "\tssize_t len;\n"
+        "\tint fd, written;\n"
+        "\tlong result;\n\n"
+        "\twritten = snprintf(fname, sizeof(fname), \"/sys/class/net/%s/%s\",\n"
+        "\t                   dev, prop);\n"
+        "\tif (written < 0 || written >= (int)sizeof(fname)) {\n"
+        "\t\terrno = ENAMETOOLONG;\n"
+        "\t\treturn -1;\n"
+        "\t}",
+        "iproute2 bounded sysfs path",
+    ),
+    (
+        "trunk/user/miniupnpd/miniupnpd-2.x/upnpredirect.c",
+        "\t\tif(proto == IPPROTO_TCP)\n"
+        "\t\t\tmemcpy(protocol, \"TCP\", 4);\n"
+        "#ifdef IPPROTO_UDPLITE\n"
+        "\t\telse if(proto == IPPROTO_UDPLITE)\n"
+        "\t\t\tmemcpy(protocol, \"UDPLITE\", 8);\n"
+        "#endif /* IPPROTO_UDPLITE */\n"
+        "\t\telse\n"
+        "\t\t\tmemcpy(protocol, \"UDP\", 4);",
+        "\t\tif(proto == IPPROTO_TCP)\n"
+        "\t\t\tmemcpy(protocol, \"TCP\", 4);\n"
+        "\t\telse\n"
+        "\t\t\tmemcpy(protocol, \"UDP\", 4);",
+        "miniupnpd bounded protocol name",
+    ),
+    (
+        "trunk/user/utils/switch/switch_gsw.c",
+        "    unsigned char\tc[4];\n"
+        "    int\t\ti;\n\n"
+        "    for (i = 0; i < 3; ++i) {",
+        "    unsigned char\tc[4];\n"
+        "    int\t\ti;\n\n"
+        "    if (ip == NULL || str == NULL)\n"
+        "\treturn 1;\n"
+        "    *ip = 0;\n\n"
+        "    for (i = 0; i < 3; ++i) {",
+        "switch IPv4 parse initialization",
+    ),
+    (
+        "trunk/user/pppd/pppd/fsm.c",
+        "    if (datalen && data != outp + PPP_HDRLEN + HEADERLEN)\n"
+        "\tBCOPY(data, outp + PPP_HDRLEN + HEADERLEN, datalen);",
+        "    if (datalen > 0 && data == NULL)\n"
+        "\tdatalen = 0;\n"
+        "    if (datalen > 0 && data != outp + PPP_HDRLEN + HEADERLEN)\n"
+        "\tBCOPY(data, outp + PPP_HDRLEN + HEADERLEN, datalen);",
+        "pppd null payload handling",
+    ),
+    (
         "trunk/user/xl2tpd/xl2tpd.c",
         "#ifdef USE_KERNEL\n"
         "                 if (!kernel_support)\n"
@@ -1662,6 +1754,11 @@ def verify_source_policy(
             "ascii_hex_length_scope_verified": True,
             "ebtables_counter_errors_propagated": True,
             "https_renegotiation_disabled_in_context": True,
+            "parsed_values_assigned_on_success": True,
+            "sysfs_paths_bounded": True,
+            "upnp_protocol_name_bounded": True,
+            "switch_ipv4_parse_initialized": True,
+            "pppd_null_payload_handled": True,
             "implicit_function_declarations_removed": [
                 "flash_mtd_read",
                 "isdigit",

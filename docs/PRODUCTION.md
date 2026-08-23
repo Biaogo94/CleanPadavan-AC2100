@@ -10,7 +10,7 @@ A successful GitHub Actions run creates a software-verified Firmware Bundle. Mac
 | Runtime fast path | `runtime-policy.json` and prepared-source verification | SFE mode 1 is the clean-NVRAM default; bridge bypass is off; module state and failure fallback are verified |
 | Aggressive tuning | `experimental-profile.json` and `runtime-policy.json` | HW NAT mode 4, bounded 32K conntrack, queue limits, target `-O3` and absence of LTO/unsafe-math all match |
 | Wireless source safety | `runtime-policy.json` and compiler warning gate | MT7615 SingleSKU spatial-stream inputs map only to compensation indexes 0-3; no array-bounds warning remains |
-| Userland source safety | `runtime-policy.json` and compiler warning gate | HTTP ASCII length scope, HTTPS renegotiation policy and ebtables counter-file error propagation are verified |
+| Userland source safety | `runtime-policy.json` and compiler warning gate | HTTP/HTTPS and ebtables policies, parsed-value initialization, bounded sysfs/UPnP writes, switch IPv4 parsing and PPP null payload handling are verified |
 | Image build safety | `runtime-policy.json` and compiler warning gate | BusyBox generator I/O is checked; LZMA searches all characters; ambiguous host-tool control flow and non-literal formats are absent |
 | Compiler warnings | `build-warning-policy.json` | Every enforced high-risk warning category and the unknown-warning count are zero; each audited legacy category stays at or below its fixed limit |
 | Public defaults | Repository config and prepared source | WebUI `admin/admin` and Wi-Fi `1234567890` are reproducibly installed and documented |

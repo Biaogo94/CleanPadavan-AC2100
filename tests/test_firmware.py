@@ -613,6 +613,53 @@ class SourcePreparationTests(unittest.TestCase):
                 "\t                       obj->sub->uuid, obj->sub->seq,\n"
                 "\t                       l, xml);\n",
             ),
+            "iptables_iptc": (
+                "trunk/user/iptables/iptables-1.4.16.3/libiptc/libiptc.c",
+                "\tunsigned int idx, idx2;\n",
+            ),
+            "iptables_xtables": (
+                "trunk/user/iptables/iptables-1.4.16.3/libxtables/xtables.c",
+                "\tret = xtables_strtoul(s, end, &v, min, max);\n"
+                "\tif (value != NULL)\n"
+                "\t\t*value = v;\n",
+            ),
+            "iproute_m_ipt": (
+                "trunk/user/iproute2/iproute2-3.4.0/tc/m_ipt.c",
+                "\tresult = string_to_number_ll(s, min, max, &number);\n"
+                "\t*ret = (unsigned long)number;\n"
+                "\tresult = string_to_number_l(s, min, max, &number);\n"
+                "\t*ret = (unsigned int)number;\n",
+            ),
+            "iproute_tuntap": (
+                "trunk/user/iproute2/iproute2-3.4.0/ip/iptuntap.c",
+                "\tchar fname[IFNAMSIZ+25], buf[80], *endp;\n"
+                "\tssize_t len;\n"
+                "\tint fd;\n"
+                "\tlong result;\n\n"
+                "\tsprintf(fname, \"/sys/class/net/%s/%s\", dev, prop);\n",
+            ),
+            "upnp_redirect": (
+                "trunk/user/miniupnpd/miniupnpd-2.x/upnpredirect.c",
+                "\t\tif(proto == IPPROTO_TCP)\n"
+                "\t\t\tmemcpy(protocol, \"TCP\", 4);\n"
+                "#ifdef IPPROTO_UDPLITE\n"
+                "\t\telse if(proto == IPPROTO_UDPLITE)\n"
+                "\t\t\tmemcpy(protocol, \"UDPLITE\", 8);\n"
+                "#endif /* IPPROTO_UDPLITE */\n"
+                "\t\telse\n"
+                "\t\t\tmemcpy(protocol, \"UDP\", 4);\n",
+            ),
+            "switch": (
+                "trunk/user/utils/switch/switch_gsw.c",
+                "    unsigned char\tc[4];\n"
+                "    int\t\ti;\n\n"
+                "    for (i = 0; i < 3; ++i) {\n",
+            ),
+            "pppd_fsm": (
+                "trunk/user/pppd/pppd/fsm.c",
+                "    if (datalen && data != outp + PPP_HDRLEN + HEADERLEN)\n"
+                "\tBCOPY(data, outp + PPP_HDRLEN + HEADERLEN, datalen);\n",
+            ),
             "xl2tpd": (
                 "trunk/user/xl2tpd/xl2tpd.c",
                 "#ifdef USE_KERNEL\n"
@@ -1275,7 +1322,7 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertTrue(
                 document["cpu_frequency_policy"]["full_fbdiv_register_programming"]
             )
-            self.assertEqual(document["userland_hardening"]["exact_source_patches"], 21)
+            self.assertEqual(document["userland_hardening"]["exact_source_patches"], 29)
             self.assertTrue(
                 document["userland_hardening"]["ascii_hex_length_scope_verified"]
             )
@@ -1286,6 +1333,19 @@ class SourcePreparationTests(unittest.TestCase):
                 document["userland_hardening"][
                     "https_renegotiation_disabled_in_context"
                 ]
+            )
+            self.assertTrue(
+                document["userland_hardening"]["parsed_values_assigned_on_success"]
+            )
+            self.assertTrue(document["userland_hardening"]["sysfs_paths_bounded"])
+            self.assertTrue(
+                document["userland_hardening"]["upnp_protocol_name_bounded"]
+            )
+            self.assertTrue(
+                document["userland_hardening"]["switch_ipv4_parse_initialized"]
+            )
+            self.assertTrue(
+                document["userland_hardening"]["pppd_null_payload_handled"]
             )
             self.assertEqual(document["wireless_hardening"]["exact_source_patches"], 2)
             self.assertTrue(
@@ -1377,6 +1437,28 @@ class SourcePreparationTests(unittest.TestCase):
                 "\tdefault:\n\t\tobj->state = EError;\n\t\treturn;\n\t}", upnp
             )
             self.assertNotIn("\t\txml = NULL;\n\t\tl = 0;", upnp)
+            self.assertIn(
+                "unsigned int idx = 0, idx2 = 0;",
+                paths["iptables_iptc"].read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "if (ret && value != NULL)",
+                paths["iptables_xtables"].read_text(encoding="utf-8"),
+            )
+            iproute_m_ipt = paths["iproute_m_ipt"].read_text(encoding="utf-8")
+            self.assertEqual(iproute_m_ipt.count("if (result == 0)"), 2)
+            iproute_tuntap = paths["iproute_tuntap"].read_text(encoding="utf-8")
+            self.assertIn("written = snprintf", iproute_tuntap)
+            self.assertIn("errno = ENAMETOOLONG;", iproute_tuntap)
+            upnp_redirect = paths["upnp_redirect"].read_text(encoding="utf-8")
+            self.assertNotIn("UDPLITE", upnp_redirect)
+            self.assertIn('memcpy(protocol, "UDP", 4);', upnp_redirect)
+            switch = paths["switch"].read_text(encoding="utf-8")
+            self.assertIn("if (ip == NULL || str == NULL)", switch)
+            self.assertIn("*ip = 0;", switch)
+            pppd_fsm = paths["pppd_fsm"].read_text(encoding="utf-8")
+            self.assertIn("datalen > 0 && data == NULL", pppd_fsm)
+            self.assertIn("datalen = 0;", pppd_fsm)
             xl2tpd = paths["xl2tpd"].read_text(encoding="utf-8")
             self.assertIn("if (!kernel_support) {", xl2tpd)
             self.assertIn("                 }\n#endif", xl2tpd)
