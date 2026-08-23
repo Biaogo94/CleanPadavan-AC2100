@@ -358,9 +358,11 @@ USERLAND_SOURCE_PATCHES = (
         "    for (i = 0; i < 3; ++i) {",
         "    unsigned char\tc[4];\n"
         "    int\t\ti;\n\n"
-        "    if (ip == NULL || str == NULL)\n"
+        "    if (ip == NULL)\n"
         "\treturn 1;\n"
-        "    *ip = 0;\n\n"
+        "    *ip = 0;\n"
+        "    if (str == NULL)\n"
+        "\treturn 1;\n\n"
         "    for (i = 0; i < 3; ++i) {",
         "switch IPv4 parse initialization",
     ),
@@ -370,7 +372,8 @@ USERLAND_SOURCE_PATCHES = (
         "\tBCOPY(data, outp + PPP_HDRLEN + HEADERLEN, datalen);",
         "    if (datalen > 0 && data == NULL)\n"
         "\tdatalen = 0;\n"
-        "    if (datalen > 0 && data != outp + PPP_HDRLEN + HEADERLEN)\n"
+        "    if (datalen > 0 && data != NULL &&\n"
+        "        data != outp + PPP_HDRLEN + HEADERLEN)\n"
         "\tBCOPY(data, outp + PPP_HDRLEN + HEADERLEN, datalen);",
         "pppd null payload handling",
     ),
