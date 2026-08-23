@@ -43,8 +43,8 @@ PROFILE = {
             "tcp_fast_open": False,
         },
         "compiler": {
-            "userland_optimization": "-O2",
-            "library_optimization": "-O2",
+            "userland_optimization": "-O3",
+            "library_optimization": "-O3",
             "architecture": "mips32r2",
             "tune": "1004kc",
             "lto": False,
@@ -65,7 +65,7 @@ PROFILE = {
         ],
     },
     "disabled_until_qualified": [
-        "compiler O3/LTO overrides",
+        "LTO and unsafe-math overrides",
         "unbounded conntrack increases",
         "regulatory transmit-power overrides",
         "bridge ingress bypass",

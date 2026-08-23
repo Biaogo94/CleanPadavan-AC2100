@@ -8,7 +8,7 @@ A successful GitHub Actions run creates a software-verified Firmware Bundle. Mac
 | Firmware Profile | `rm2100-3.4.config` | RM2100, Linux 3.4, AU dual-band policy, selected CPU mode, approved options only |
 | CPU baseline | `kernel-3.4.config` and `performance-profile.json` | Requested PLL mode, 4-way SMP, HZ=250, SFE, RPS and XPS all match |
 | Runtime fast path | `runtime-policy.json` and prepared-source verification | SFE mode 1 is the clean-NVRAM default; bridge bypass is off; module state and failure fallback are verified |
-| Aggressive tuning | `experimental-profile.json` and `runtime-policy.json` | HW NAT mode 4, bounded 32K conntrack, queue limits, target `-O2` and absence of O3/LTO/unsafe-math all match |
+| Aggressive tuning | `experimental-profile.json` and `runtime-policy.json` | HW NAT mode 4, bounded 32K conntrack, queue limits, target `-O3` and absence of LTO/unsafe-math all match |
 | Wireless source safety | `runtime-policy.json` and compiler warning gate | MT7615 SingleSKU spatial-stream inputs map only to compensation indexes 0-3; no array-bounds warning remains |
 | Userland source safety | `runtime-policy.json` and compiler warning gate | HTTP ASCII length scope, HTTPS renegotiation policy and ebtables counter-file error propagation are verified |
 | Image build safety | `runtime-policy.json` and compiler warning gate | BusyBox generator I/O is checked; LZMA searches all characters; ambiguous host-tool control flow and non-literal formats are absent |

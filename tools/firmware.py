@@ -117,12 +117,12 @@ NETWORK_QUEUE_DEFAULTS_AGGRESSIVE = """\
 \tfput_int("/proc/sys/net/core/somaxconn", 1024);
 """
 COMPILER_OPTIMIZATION_ORIGINAL = "UOPT = -Os\nLOPT = -Os"
-COMPILER_OPTIMIZATION_AGGRESSIVE = "UOPT = -O2\nLOPT = -O2"
+COMPILER_OPTIMIZATION_AGGRESSIVE = "UOPT = -O3\nLOPT = -O3"
 OPENSSL_OPTIMIZATION_ORIGINAL = (
     "COPTS = $(CPUFLAGS) -O3 $(filter-out -O%, $(CFLAGS))"
 )
 OPENSSL_OPTIMIZATION_AGGRESSIVE = (
-    "COPTS = $(CPUFLAGS) -O2 $(filter-out -O%, $(CFLAGS))"
+    "COPTS = $(CPUFLAGS) -O3 -fomit-frame-pointer $(filter-out -O%, $(CFLAGS))"
 )
 SFE_RUNTIME_ORIGINAL = """\
 \tif (sfe_loaded && !sfe_enable) {
@@ -596,8 +596,8 @@ IMAGE_BUILD_SOURCE_PATCHES = (
     (
         "trunk/vendors/Ralink/Makefile",
         "$(ROOTDIR)/tools/mksquashfs_xz/mksquashfs $(ROMFSDIR) $(RAMDISK) -all-root -no-exports -noappend -nopad -noI -no-xattrs",
-        "$(ROOTDIR)/tools/mksquashfs_xz/mksquashfs $(ROMFSDIR) $(RAMDISK) -all-root -no-exports -noappend -nopad -noI -no-xattrs -processors 1",
-        "deterministic SquashFS processor count",
+        "$(ROOTDIR)/tools/mksquashfs_xz/mksquashfs $(ROMFSDIR) $(RAMDISK) -all-root -no-exports -noappend -nopad -noI -no-xattrs -processors 1 -no-fragments",
+        "deterministic SquashFS packing",
     ),
     (
         "trunk/user/busybox/busybox-1.24.x/scripts/kconfig/confdata.c",
@@ -1101,8 +1101,8 @@ def load_experimental_profile(path: Path) -> dict[str, object]:
         raise FirmwareError("aggressive network tuning settings are invalid")
     compiler = features["compiler"]
     if not isinstance(compiler, dict) or compiler != {
-        "userland_optimization": "-O2",
-        "library_optimization": "-O2",
+        "userland_optimization": "-O3",
+        "library_optimization": "-O3",
         "architecture": "mips32r2",
         "tune": "1004kc",
         "lto": False,
@@ -1121,7 +1121,7 @@ def load_experimental_profile(path: Path) -> dict[str, object]:
     ]:
         raise FirmwareError("aggressive qualification requirements are incomplete")
     if document["disabled_until_qualified"] != [
-        "compiler O3/LTO overrides", "unbounded conntrack increases",
+        "LTO and unsafe-math overrides", "unbounded conntrack increases",
         "regulatory transmit-power overrides", "bridge ingress bypass",
     ]:
         raise FirmwareError("aggressive disabled-until-qualified policy is invalid")
@@ -1580,7 +1580,7 @@ def verify_source_policy(
                 ),
                 "aggressive unsafe compiler flags absent": not any(
                     flag in compiler_content + openssl_content
-                    for flag in ("-O3", "-flto", "-ffast-math", "-funroll-loops")
+                    for flag in ("-flto", "-ffast-math", "-funroll-loops")
                 ),
             }
         )
@@ -1690,6 +1690,8 @@ def verify_source_policy(
             "literal_format_strings": True,
             "lzma_string_search_checks_all_characters": True,
             "squashfs_timestamps_from_source_epoch": True,
+            "squashfs_single_threaded": True,
+            "squashfs_fragments_disabled": True,
         },
         "watchdog": {"default_enabled": True},
     }
@@ -1704,8 +1706,8 @@ def verify_source_policy(
                 "tcp_fast_open": False,
             },
             "compiler": {
-                "userland_optimization": "-O2",
-                "library_optimization": "-O2",
+                "userland_optimization": "-O3",
+                "library_optimization": "-O3",
                 "architecture": "mips32r2",
                 "tune": "1004kc",
                 "lto": False,

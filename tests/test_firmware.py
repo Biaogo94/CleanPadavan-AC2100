@@ -169,8 +169,8 @@ class ProfilePolicyTests(unittest.TestCase):
                 )
             )
             document["features"]["compiler"] = {
-                "userland_optimization": "-O2",
-                "library_optimization": "-O2",
+                "userland_optimization": "-O3",
+                "library_optimization": "-O3",
                 "architecture": "mips32r2",
                 "tune": "1004kc",
                 "lto": True,
@@ -1088,16 +1088,17 @@ class SourcePreparationTests(unittest.TestCase):
                 'fput_int("/proc/sys/net/core/somaxconn", 1024);', rendered_init
             )
             rendered_arch = config_arch.read_text(encoding="utf-8")
-            self.assertIn("UOPT = -O2", rendered_arch)
-            self.assertIn("LOPT = -O2", rendered_arch)
+            self.assertIn("UOPT = -O3", rendered_arch)
+            self.assertIn("LOPT = -O3", rendered_arch)
             self.assertIn("CPUFLAGS += -mtune=1004kc", rendered_arch)
             self.assertNotIn("-flto", rendered_arch)
             rendered_openssl = openssl_makefile.read_text(encoding="utf-8")
             self.assertIn(
-                "COPTS = $(CPUFLAGS) -O2 $(filter-out -O%, $(CFLAGS))",
+                "COPTS = $(CPUFLAGS) -O3 -fomit-frame-pointer "
+                "$(filter-out -O%, $(CFLAGS))",
                 rendered_openssl,
             )
-            self.assertNotIn("-O3", rendered_openssl)
+            self.assertNotIn("-flto", rendered_openssl)
 
             report = directory / "aggressive-runtime-policy.json"
             verification = subprocess.run(
@@ -1119,7 +1120,7 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertEqual(verification.returncode, 0, verification.stderr)
             policy = json.loads(report.read_text(encoding="utf-8"))
             self.assertEqual(policy["experimental"]["network_tuning"]["conntrack_default"], 32768)
-            self.assertEqual(policy["experimental"]["compiler"]["userland_optimization"], "-O2")
+            self.assertEqual(policy["experimental"]["compiler"]["userland_optimization"], "-O3")
 
     def test_prepare_source_restricts_the_management_plane(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1309,6 +1310,12 @@ class SourcePreparationTests(unittest.TestCase):
                 ]
             )
             self.assertTrue(
+                document["image_build_hardening"]["squashfs_single_threaded"]
+            )
+            self.assertTrue(
+                document["image_build_hardening"]["squashfs_fragments_disabled"]
+            )
+            self.assertTrue(
                 document["image_build_hardening"][
                     "lzma_string_search_checks_all_characters"
                 ]
@@ -1473,7 +1480,10 @@ class SourcePreparationTests(unittest.TestCase):
             self.assertIn("< 2", rendered_mkimage)
             self.assertNotIn('sscanf(argv[1], "%d.%d"', rendered_mkimage)
             self.assertNotIn('sscanf(argv[2], "%d.%d%c"', rendered_mkimage)
-            self.assertIn("-no-xattrs -processors 1", ralink_makefile.read_text(encoding="utf-8"))
+            rendered_makefile = ralink_makefile.read_text(encoding="utf-8")
+            self.assertIn(
+                "-no-xattrs -processors 1 -no-fragments", rendered_makefile
+            )
 
     def test_prepare_source_requires_the_locked_openssl_archive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
